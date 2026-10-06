@@ -1,0 +1,25 @@
+{
+  "name": "setlist",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w @setlist/server\" \"npm run dev -w @setlist/web\"",
+    "dev:sim": "concurrently -n sim,server,web -c magenta,blue,green \"python remote-script/simulator/sim.py\" \"npm run dev -w @setlist/server\" \"npm run dev -w @setlist/web\"",
+    "build": "npm run build -w @setlist/web && npm run build -w @setlist/desktop",
+    "test": "vitest run && python -m unittest discover remote-script/tests",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/server && tsc --noEmit -p packages/web",
+    "sim": "python remote-script/simulator/sim.py"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

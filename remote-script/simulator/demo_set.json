@@ -1,0 +1,61 @@
+{
+  "tempo": 120,
+  "sig": [4, 4],
+  "length": 216,
+  "cues": [
+    [0, "Neon Lights {Capo 2} [blue] #upbeat"],
+    [0, "> Intro"],
+    [16, "> Verse 1"],
+    [32, ">> Chorus"],
+    [48, "> Vamp +LOOP"],
+    [56, "> Outro"],
+    [64, "SONG END"],
+    [72, "Slow Burn {Key of Am} [violet] #ballad"],
+    [72, "> Intro >>> Chorus [c:1]"],
+    [88, "> Verse"],
+    [104, "> Chorus +LOOP:2"],
+    [120, "> Bridge +SKIP"],
+    [128, "> Last Chorus"],
+    [144, "> Tag +END"],
+    [152, "STOP"],
+    [160, ". Encore [rose] #encore"],
+    [160, "> Build"],
+    [208, "SONG END"],
+    [216, "* scratch area"]
+  ],
+  "tracks": [
+    { "name": "Sections", "color": 7895160, "clips": [["Drop", 176, 180], ["Breakdown [orange]", 192, 196]] },
+    {
+      "name": "Vocals +LYRICS",
+      "color": 16753920,
+      "clips": [
+        ["[gray] (instrumental)", 0, 16],
+        ["City lights are **burning** bright", 16, 20],
+        ["Every window *paints* the night", 20, 24],
+        ["Running down the avenue \\ chasing echoes back to you", 24, 32],
+        ["[C]Neon [G]lights, [Am]shining [F]on", 32, 36],
+        ["[C]Hold the [G]moment [F]till it's gone", 36, 44],
+        ["[large] Oh-oh-oh", 44, 48],
+        ["[gray] Vamp (repeat)", 48, 56],
+        ["Fading into blue", 56, 64],
+        ["[Am]Slow [F]burn, [C]steady [G]flame", 88, 96],
+        ["Every ember knows your name", 96, 104],
+        ["[F]Carry me [G]home", 104, 112],
+        ["[F]Carry me [G]home [Am]again", 112, 120],
+        ["Last time, now", 128, 144],
+        ["[blue] Hands up!", 176, 192],
+        ["[blue] Break it down", 192, 208]
+      ]
+    },
+    { "name": "Click +G:CLICK", "color": 16711680 },
+    { "name": "Cues +GUIDE +G:CUES", "color": 16776960 },
+    { "name": "Loop Cue +LOOPGUIDE +G:CUES", "color": 16776960 },
+    { "name": "Jump Cue +JUMPGUIDE +G:CUES", "color": 16776960 },
+    { "name": "Drums +G:DRUMS", "color": 3381759 },
+    { "name": "Bass +G:BASS", "color": 6750054 },
+    { "name": "Keys 1 +G:KEYS", "color": 10053324 },
+    { "name": "Keys 2 +G:KEYS", "color": 10053324 },
+    { "name": "Backing Vox +G:BACKING_VOX", "color": 16737945 },
+    { "name": "LTC +NM", "color": 8421504 }
+  ]
+}
