@@ -11,6 +11,7 @@ import {
   matchSong,
   parseTrackName,
   reconcileSetlist,
+  silencePoints,
   sectionByOffset,
   setlistFromText,
   songByOffset,
@@ -25,6 +26,7 @@ import {
   type Song,
 } from '@setlist/core';
 import type { LiveBridge } from './bridge.ts';
+import type { PluginHub } from './plugins.ts';
 import type { Storage } from './storage.ts';
 
 const EPS = 1e-6;
@@ -100,6 +102,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       urls: [],
       midiInputs: [],
       midiLearn: null,
+      plugins: [],
     };
     bridge.on('message', (m) => this.onScriptMessage(m));
     bridge.on('connected', (c) => {
@@ -137,7 +140,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
         break;
       }
       case 'time':
-        this.updateTime(msg.time, msg.playing);
+        // A connected Setlist Sync plugin reports a more precise playhead; prefer it.
+        if (this.state.plugins.length === 0) this.updateTime(msg.time, msg.playing);
         break;
       case 'meters':
         this.emit('meters', msg.levels);
@@ -226,9 +230,28 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     return activeOrder(this.state.setlist);
   }
 
+  private pluginHub: PluginHub | null = null;
+
+  /** Connect "Setlist Sync" VST3 instances: precise playhead in, stop points out. */
+  attachPlugins(hub: PluginHub) {
+    this.pluginHub = hub;
+    hub.on('instances', (plugins) => this.set({ plugins }));
+    hub.on('time', (id, time, playing) => {
+      // Several instances (Master + other outputs) report the same transport: follow the first.
+      if (id === this.state.plugins[0]?.id) this.updateTime(time, playing);
+    });
+    hub.on('gated', (_id, at) => console.log(`[plugins] silenced output at beat ${at}`));
+    this.pushGates();
+  }
+
+  private pushGates() {
+    this.pluginHub?.setGates(silencePoints(this.plan, this.state.queued?.at ?? null));
+  }
+
   private pushPlan() {
     this.plan = buildPlan(this.state.songs, this.order(), this.state.settings);
     if (this.state.liveConnected) this.bridge.send({ type: 'plan', plan: this.plan });
+    this.pushGates();
   }
 
   // ------------------------------------------------------------- navigation
@@ -250,6 +273,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
 
   private setQueued(queued: QueuedJump | null) {
     this.set({ queued });
+    this.pushGates();
     this.updateGuides();
   }
 

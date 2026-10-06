@@ -10,6 +10,7 @@ import { SetlistApp } from './app.ts';
 import { LiveBridge } from './bridge.ts';
 import { MidiService } from './midi.ts';
 import { OscService } from './osc.ts';
+import { PluginHub } from './plugins.ts';
 import { Storage } from './storage.ts';
 
 export { SetlistApp } from './app.ts';
@@ -161,6 +162,13 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     await fastify.close();
     throw err;
   }
+  const pluginHub = new PluginHub();
+  try {
+    await pluginHub.start();
+    app.attachPlugins(pluginHub);
+  } catch (err) {
+    console.warn(`[plugins] Setlist Sync support disabled: ${(err as Error).message}`);
+  }
   try {
     await oscService.start();
   } catch (err) {
@@ -188,6 +196,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     async close() {
       midi.stop();
       oscService.stop();
+      pluginHub.stop();
       bridge.stop();
       bonjour?.unpublishAll();
       bonjour?.destroy();

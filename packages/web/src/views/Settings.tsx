@@ -55,6 +55,16 @@ export function SettingsView() {
           Ableton Live:{' '}
           {state.liveConnected ? <span className="text-ok">connected (script {state.scriptVersion})</span> : <span className="text-danger">not connected</span>}
         </div>
+        <div className="mt-1 text-sm">
+          Setlist Sync plugin:{' '}
+          {state.plugins.length > 0 ? (
+            <span className="text-ok">
+              {state.plugins.length} instance{state.plugins.length > 1 ? 's' : ''} ({state.plugins.map((p) => p.track ?? 'unnamed track').join(', ')}): sample-accurate stops
+            </span>
+          ) : (
+            <span className="text-muted">not detected. Stops are accurate to ~100 ms; add the plugin to Master for exact stops.</span>
+          )}
+        </div>
         <div className="mt-2 text-sm text-muted">Open Setlist on other devices on this network:</div>
         <ul className="mt-1 text-sm">
           {state.urls.map((u) => (
