@@ -198,3 +198,14 @@ export function jumpTiming(
 export function loopAt(plan: PlaybackPlan, time: Beats): PlanLoop | undefined {
   return plan.loops.find((l) => time >= l.start - EPS && time < l.end - EPS);
 }
+
+/**
+ * Positions where the Setlist Sync plugin silences audio: every stop event, except one
+ * overridden by a queued jump at the same boundary (the Remote Script skips those too).
+ */
+export function silencePoints(plan: PlaybackPlan, queuedAt: Beats | null): Beats[] {
+  return plan.events
+    .filter((e) => e.type === 'stop' && (queuedAt === null || Math.abs(e.at - queuedAt) > EPS))
+    .map((e) => e.at)
+    .sort((a, b) => a - b);
+}

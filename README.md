@@ -14,6 +14,9 @@ Ableton Live 12 ── Remote Script "Setlist" (Python, runs inside Live)
 Setlist server (Node) ── state, setlists, MIDI in, OSC :39051, HTTP + WebSocket
        │
 Browsers on the LAN (React UI)
+
+Optional: "Setlist Sync" VST3/AU on Master ── UDP 39102 ── server
+             sample-accurate playhead + exact silence at STOP / +PAUSE
 ```
 
 The server sends the Remote Script a *plan* (stop and jump events, plus `+LOOP` regions), and the script executes it
@@ -28,6 +31,7 @@ whatever the network latency.
 | `packages/server/` | Live bridge, app state and actions, storage, MIDI, OSC, HTTP/WebSocket |
 | `packages/web/` | React UI: Performance, Setlist, Lyrics, Mixer, Settings |
 | `apps/desktop/` | Electron tray app, Remote Script installer, packaging |
+| `plugin/` | Optional "Setlist Sync" VST3/AU (JUCE 8) for exact stops. See [plugin/README.md](plugin/README.md) |
 
 ## Getting started
 
@@ -58,7 +62,7 @@ npm test          # TS unit tests + Python engine tests
 npm run typecheck
 ```
 
-`SIM_SPEED=3 npm run sim` runs the simulator faster. Edit `remote-script/simulator/demo_set.json` to try other sets.
+`SIM_SPEED=3 npm run sim` runs the simulator faster, and `npm run sim -- --plugin` also simulates the Setlist Sync plugin. Edit `remote-script/simulator/demo_set.json` to try other sets.
 
 ### Desktop app
 
@@ -152,7 +156,7 @@ which songs it contains.
 
 ## Known limitations
 
-- **STOP and +PAUSE timing.** These fire on the Remote Script's ~100 ms tick, so playback can stop up to about 100 ms after the locator. Jumps don't have this problem. Place STOP locators slightly after the song's tail.
+- **STOP and +PAUSE timing.** Without the plugin, these fire on the Remote Script's ~100 ms tick, so playback can stop up to about 100 ms after the locator. Place STOP locators slightly after the song's tail. With [Setlist Sync](plugin/README.md) on Master and on any other outputs, the output goes silent on the exact sample.
 - **Locator grid.** Put locators on the bar or beat grid. Off-grid targets fall back to a less precise jump.
 - **Tempo changes.** Song durations assume the tempo shown in Live; tempo automation isn't accounted for.
 - **Not built yet.** Canvas builder, voice cues/TTS, AbleNet redundancy, audio interface control and multi-file projects.

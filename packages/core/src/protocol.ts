@@ -45,6 +45,29 @@ export type ServerToScript =
   | { type: 'plan'; plan: PlaybackPlan };
 
 // ---------------------------------------------------------------------------
+// "Setlist Sync" VST3 plugin <-> server (UDP, one JSON object per datagram)
+
+export const PLUGIN_PORT = 39102; // server listens; plugins send from an ephemeral port
+
+export type PluginToServer =
+  /** Sent every second as a heartbeat. `track` is the Live track the plugin sits on, if known. */
+  | { type: 'hello'; id: string; version: string; track?: string }
+  /** Sample-accurate playhead, ~60/s. */
+  | { type: 'time'; id: string; time: Beats; playing: boolean; tempo: number }
+  /** The plugin started silencing at a stop point. */
+  | { type: 'gated'; id: string; at: Beats };
+
+export type ServerToPlugin =
+  /** Arrangement positions (beats) where audio must be silenced (STOP / +PAUSE). */
+  { type: 'gates'; points: Beats[] };
+
+export interface PluginInstance {
+  id: string;
+  track: string | null;
+  version: string;
+}
+
+// ---------------------------------------------------------------------------
 // Server <-> browser (WebSocket)
 
 export interface QueuedJump {
@@ -80,6 +103,8 @@ export interface AppState {
   urls: string[];
   midiInputs: string[];
   midiLearn: { mappingId: string } | null;
+  /** Connected "Setlist Sync" plugin instances. */
+  plugins: PluginInstance[];
 }
 
 export type ServerToClient =

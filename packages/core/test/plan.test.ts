@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, jumpTiming, songByOffset, sectionByOffset } from '../src/plan.ts';
+import { buildPlan, jumpTiming, silencePoints, songByOffset, sectionByOffset } from '../src/plan.ts';
 import { buildSongs } from '../src/songs.ts';
 import { DEMO } from './fixtures.ts';
 
@@ -73,5 +73,16 @@ describe('navigation', () => {
     expect(jumpTiming(ctx, toSection, 'endOfSong')).toEqual({ kind: 'at', at: 64 });
     expect(jumpTiming(ctx, toSection, 'dynamic')).toEqual({ kind: 'at', at: 48 });
     expect(jumpTiming(ctx, toSong, 'dynamic')).toEqual({ kind: 'at', at: 64 });
+  });
+});
+
+describe('silencePoints', () => {
+  const plan = buildPlan(songs, order, { autojumpNextSong: true });
+  it('lists stop events', () => {
+    expect(silencePoints(plan, null)).toEqual([160, 240]);
+  });
+  it('drops a stop overridden by a queued jump at the same boundary', () => {
+    expect(silencePoints(plan, 160)).toEqual([240]);
+    expect(silencePoints(plan, 64)).toEqual([160, 240]);
   });
 });
