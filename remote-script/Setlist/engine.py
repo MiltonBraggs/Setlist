@@ -18,6 +18,8 @@ Q_BAR = 4
 GRID = [(5, 2.0), (7, 1.0), (9, 0.5), (11, 0.25), (13, 0.125)]
 # Playhead moves larger than this between two updates are jumps, not playback.
 DISCONTINUITY_BEATS = 1.0
+# Ticks (~100 ms each) during which a parked position is held after stopping.
+RELOCATE_TICKS = 10
 # How far past a jump target the playhead may be when we next look (fast tempos, slow ticks).
 LANDING_ZONE_BEATS = 4.0
 
@@ -42,6 +44,7 @@ class JumpEngine(object):
         self.loop_passes = 0
         self.count_in = None
         self.relocate_after_stop = None
+        self.relocate_ticks = 0
 
     # ------------------------------------------------------------------ plan
 
@@ -131,12 +134,15 @@ class JumpEngine(object):
         self.last_time = self.live.time()
 
     def tick(self):
-        # Live may move the playhead back to the start marker after stop_playing(),
-        # so re-apply a pending relocation once playback has stopped.
+        # When Live stops it moves the playhead back to its start marker, and in real Live that
+        # can happen a moment *after* stop_playing() returns. So keep re-applying the parked
+        # position for a short while (RELOCATE_TICKS) instead of only once.
         if self.relocate_after_stop is not None and not self.live.is_playing():
             if abs(self.live.time() - self.relocate_after_stop) > EPS:
                 self.live.set_time(self.relocate_after_stop)
-            self.relocate_after_stop = None
+            self.relocate_ticks -= 1
+            if self.relocate_ticks <= 0:
+                self.relocate_after_stop = None
             self.last_time = self.live.time()
 
     def on_time(self, t):
@@ -179,6 +185,7 @@ class JumpEngine(object):
     def _relocate(self, position):
         self.live.set_time(position)
         self.relocate_after_stop = position
+        self.relocate_ticks = RELOCATE_TICKS
         self.last_time = position
 
     def _jump_now(self, to):

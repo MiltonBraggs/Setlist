@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ALL_SONGS_NAME, DEFAULT_SETTINGS, normalizeViewerPermissions, type Settings, type Setlist } from '@setlist/core';
+import { ALL_SONGS_NAME, DEFAULT_SETTINGS, compareSetlists, normalizeViewerPermissions, type Settings, type Setlist } from '@setlist/core';
 
 export function defaultDataDir(): string {
   if (process.env.SETLIST_DATA_DIR) return process.env.SETLIST_DATA_DIR;
@@ -50,6 +50,7 @@ function asSetlist(value: unknown): Omit<Setlist, 'id'> & { id?: string } | null
     name: typeof v.name === 'string' && v.name.trim() ? v.name.trim() : 'Untitled',
     entries,
     autoAdd: v.autoAdd === true,
+    created: typeof v.created === 'number' && Number.isFinite(v.created) ? v.created : undefined,
   };
 }
 
@@ -179,7 +180,7 @@ export class Storage {
       if (this.saveSetlist(setlist)) fs.rmSync(path.join(dir, file), { force: true });
       out.push(setlist);
     }
-    return out;
+    return out.sort(compareSetlists);
   }
 
   saveSetlist(setlist: Setlist): boolean {

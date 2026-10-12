@@ -18,6 +18,13 @@ export interface Setlist {
    * setlists built by picking songs get new songs as removed, ready in "Add songs".
    */
   autoAdd?: boolean;
+  /** Creation time (ms), for a stable order in the setlist switcher. */
+  created?: number;
+}
+
+/** "All songs" first, then in the order they were created. */
+export function compareSetlists(a: Setlist, b: Setlist): number {
+  return Number(!!b.autoAdd) - Number(!!a.autoAdd) || (a.created ?? 0) - (b.created ?? 0) || a.name.localeCompare(b.name);
 }
 
 export interface SetlistSummary {
@@ -48,7 +55,7 @@ export function reconcileSetlist(setlist: Setlist, songs: Song[]): Setlist {
 }
 
 /** A setlist made by picking songs: the picks in order, every other song available but removed. */
-export function createSetlist(id: string, name: string, songIds: string[], songs: Song[]): Setlist {
+export function createSetlist(id: string, name: string, songIds: string[], songs: Song[], created = Date.now()): Setlist {
   const known = new Set(songs.map((s) => s.id));
   const picked = [...new Set(songIds)].filter((sid) => known.has(sid));
   const pickedSet = new Set(picked);
@@ -56,6 +63,7 @@ export function createSetlist(id: string, name: string, songIds: string[], songs
     id,
     name,
     autoAdd: false,
+    created,
     entries: [...picked.map((songId) => ({ songId })), ...songs.filter((s) => !pickedSet.has(s.id)).map((s) => ({ songId: s.id, removed: true }))],
   };
 }

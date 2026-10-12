@@ -89,6 +89,29 @@ class FakeLive(object):
         self.t = new
 
 
+class LateResetLive(FakeLive):
+    """Like real Live: a moment after stop_playing(), Live itself settles the playhead
+    (here: where playback stopped), overriding a position set right after the stop."""
+
+    def __init__(self, *a, **kw):
+        FakeLive.__init__(self, *a, **kw)
+        self.reset_in = None
+        self.stopped_at = None
+
+    def stop_playing(self):
+        self.stopped_at = self.t
+        FakeLive.stop_playing(self)
+        self.reset_in = 2  # two ticks later
+
+    def advance(self):
+        if self.reset_in is not None:
+            self.reset_in -= 1
+            if self.reset_in <= 0:
+                self.reset_in = None
+                self.t = self.stopped_at
+        FakeLive.advance(self)
+
+
 def run(engine, live, ticks):
     for _ in range(ticks):
         was = live.playing
@@ -156,6 +179,21 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(live.log[0][0], "stop")
         self.assertGreaterEqual(live.log[0][1], 16.0)
         self.assertEqual(live.t, 32)
+
+    def test_stop_relocation_survives_lives_late_reset(self):
+        # Setlist "B then A": B (16..32) ends with STOP, next song A starts at 0 (earlier in the arrangement).
+        live = LateResetLive([0, 16, 32], step=0.2)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        engine.set_plan({"events": [{"at": 32, "type": "stop", "relocate": 0}], "loops": []})
+        live.t = 20.0
+        engine.play()
+        run(engine, live, 70)  # reach 32, stop; two ticks later Live parks the playhead back at 32
+        self.assertFalse(live.playing)
+        self.assertEqual(live.t, 0, "parked at the next setlist song, not at B's STOP")
+        engine.play()
+        run(engine, live, 3)
+        self.assertTrue(live.playing)
+        self.assertLess(live.t, 2, "playback starts at the next setlist song")
 
     def test_restart_from_stop_point_does_not_refire(self):
         live, engine, _ = make([0, 16], {"events": [{"at": 16, "type": "stop", "relocate": None}], "loops": []})

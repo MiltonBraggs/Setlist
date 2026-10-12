@@ -492,6 +492,16 @@ export class SetlistApp extends EventEmitter<AppEvents> {
 
   private play() {
     if (this.playing) return;
+    // Parked between songs (e.g. at a STOP locator): start the next song in the setlist, never
+    // whatever happens to follow in the arrangement. A safety net in case Live didn't keep the
+    // playhead where the Remote Script parked it.
+    if (this.state.songs.length > 0 && locate(this.state.songs, this.time).songIndex < 0) {
+      const next = songByOffset(this.ctx(), 1);
+      if (next) {
+        this.bridge.command({ name: 'jump', to: next.start, quantized: false });
+        this.updateTime(next.start, false);
+      }
+    }
     const { section } = this.currentSection();
     const atSectionStart = section && Math.abs(section.start - this.time) < 0.01;
     const bars = atSectionStart && section.countIn?.bars !== undefined ? section.countIn.bars : this.state.settings.countInBars;
@@ -507,14 +517,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
 
   /** Context-aware single button (AbleSet's GO). */
   private go() {
-    if (!this.playing) {
-      const loc = locate(this.state.songs, this.time);
-      if (loc.songIndex < 0 && this.state.songs.length > 0) {
-        const next = songByOffset(this.ctx(), 1);
-        if (next) return this.queueJump(next);
-      }
-      return this.play();
-    }
+    // Stopped: play (between songs, play() first moves to the next setlist song).
+    if (!this.playing) return this.play();
     if (this.loopActive()) return this.escapeLoop();
     if (this.state.queued) return this.jumpQueued(true);
   }
@@ -805,7 +809,14 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     duplicateSetlist: (id: unknown) => {
       const raw = this.setlists.get(String(id));
       if (!raw) return;
-      const copy: Setlist = { ...raw, id: newId(), name: `${raw.name} copy`.slice(0, MAX_NAME), autoAdd: false, entries: raw.entries.map((e) => ({ ...e })) };
+      const copy: Setlist = {
+        ...raw,
+        id: newId(),
+        name: `${raw.name} copy`.slice(0, MAX_NAME),
+        autoAdd: false,
+        created: Date.now(),
+        entries: raw.entries.map((e) => ({ ...e })),
+      };
       this.setlists.set(copy.id, copy);
       this.storage.saveSetlist(copy);
       this.selectSetlist(copy.id);

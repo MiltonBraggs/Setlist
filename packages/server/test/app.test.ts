@@ -173,8 +173,9 @@ describe('setlists', () => {
 describe('transport', () => {
   it('GO: next song when parked, play when inside a song, escape loop, jump to queued', () => {
     time(160, false); // parked at Ballad's STOP
+    bridge.commands = [];
     app.dispatch('go');
-    expect(bridge.last()).toEqual({ name: 'jump', to: 176, quantized: false });
+    expect(bridge.commands).toEqual([{ name: 'jump', to: 176, quantized: false }, { name: 'play' }]);
 
     time(20, false);
     app.dispatch('go');
@@ -191,6 +192,22 @@ describe('transport', () => {
     app.dispatch('go');
     expect(bridge.last()).toEqual({ name: 'jump', to: 96, quantized: false });
     expect(app.state.queued).toBeNull();
+  });
+
+  it("setlist order B then A: Play after B's STOP starts A, not what follows B in the arrangement", () => {
+    // Arrangement: Opener (0-64), Ballad (96-160, ends with STOP), Closer (176-240). Setlist: Ballad, Opener.
+    app.dispatch('createSetlist', ['B then A', ['ballad', 'opener']]);
+    time(160, false); // parked at Ballad's STOP (Live left the playhead there)
+    bridge.commands = [];
+    app.dispatch('playPause');
+    expect(bridge.commands).toEqual([{ name: 'jump', to: 0, quantized: false }, { name: 'play' }]);
+  });
+
+  it('plays normally when stopped inside a song', () => {
+    time(20, false);
+    bridge.commands = [];
+    app.dispatch('play');
+    expect(bridge.commands).toEqual([{ name: 'play' }]);
   });
 
   it('queues per jump mode', () => {
