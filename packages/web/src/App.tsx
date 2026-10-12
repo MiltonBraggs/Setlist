@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { act, useStore } from './store.ts';
 import { Transport } from './components/Transport.tsx';
-import { Button } from './components/ui.tsx';
 import { Performance } from './views/Performance.tsx';
 import { SetlistView } from './views/Setlist.tsx';
 import { Lyrics } from './views/Lyrics.tsx';
@@ -64,15 +63,34 @@ function NotificationOverlay() {
   if (!n || n.id === dismissed) return null;
   if (!n.big) {
     return (
-      <div className="no-print fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-lg border border-line bg-panel px-4 py-3 shadow-xl" onClick={() => setDismissed(n.id)}>
+      <button
+        type="button"
+        className="no-print glass fixed bottom-32 left-1/2 z-40 -translate-x-1/2 rounded-full bg-glass2 px-6 py-3 text-[15px] shadow-[0_8px_32px_rgba(0,0,0,0.15)]"
+        onClick={() => setDismissed(n.id)}
+      >
         {n.text}
-      </div>
+      </button>
     );
   }
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-8 text-center" onClick={() => setDismissed(n.id)}>
-      <div className="text-[clamp(2rem,8vw,6rem)] font-bold leading-tight text-white">{n.text}</div>
-    </div>
+    <button
+      type="button"
+      aria-label="Dismiss message"
+      className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-8 text-center"
+      onClick={() => setDismissed(n.id)}
+    >
+      <span className="headline text-[clamp(2.5rem,8vw,7rem)] text-white">{n.text}</span>
+    </button>
+  );
+}
+
+function Status({ connected, live }: { connected: boolean; live: boolean }) {
+  const text = !connected ? 'Reconnecting…' : live ? 'Live connected' : 'Waiting for Live';
+  return (
+    <span className="inline-flex items-center gap-2 text-xs text-muted">
+      <span className={`h-2 w-2 rounded-full ${connected && live ? 'bg-ok' : connected ? 'bg-amber-400' : 'bg-danger'}`} title={text} />
+      <span className="hidden sm:inline">{text}</span>
+    </span>
   );
 }
 
@@ -101,40 +119,44 @@ export function App() {
   const { Component } = VIEWS[view];
   return (
     <div className="flex h-full flex-col">
-      <nav className="no-print flex items-center gap-1 overflow-x-auto border-b border-line bg-panel px-2">
-        <span className="mr-3 px-2 font-bold tracking-tight">Setlist</span>
-        {(Object.keys(VIEWS) as ViewId[]).map((id) => (
-          <a
-            key={id}
-            href={`#/${id}`}
-            className={`border-b-2 px-3 py-3 text-sm font-medium ${view === id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
-          >
-            {VIEWS[id].label}
+      <header className="no-print glass z-20 border-b border-line bg-glass">
+        <nav aria-label="Main" className="mx-auto flex max-w-[1180px] items-center gap-2 px-4 py-1 sm:gap-4 sm:px-6">
+          <a href="#/performance" className="inline-flex min-h-11 items-center text-[19px] font-semibold tracking-[-0.02em] text-fg no-underline">
+            Setlist
           </a>
-        ))}
-        <div className="flex-1" />
-        {state.locked && <span className="rounded bg-amber-500 px-2 py-0.5 text-xs font-bold text-black">LOCKED</span>}
-        <span
-          className={`ml-2 h-2.5 w-2.5 shrink-0 rounded-full ${connected && state.liveConnected ? 'bg-ok' : 'bg-danger'}`}
-          title={connected ? (state.liveConnected ? 'Connected to Live' : 'Waiting for Live') : 'Disconnected'}
-        />
-      </nav>
-      {!connected && <div className="no-print bg-danger px-4 py-1.5 text-center text-sm text-white">Connection to Setlist lost. Reconnecting…</div>}
+          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] sm:justify-center">
+            {(Object.keys(VIEWS) as ViewId[]).map((id) => (
+              <a
+                key={id}
+                href={`#/${id}`}
+                aria-current={view === id ? 'page' : undefined}
+                className={`inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-[13px] no-underline transition sm:px-4 ${view === id ? 'bg-fg/[0.07] text-fg' : 'text-muted hover:text-fg'}`}
+              >
+                {VIEWS[id].label}
+              </a>
+            ))}
+          </div>
+          {state.locked && <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-black">Locked</span>}
+          <Status connected={connected} live={state.liveConnected} />
+        </nav>
+      </header>
       {connected && !state.liveConnected && (
-        <div className="no-print bg-amber-500 px-4 py-1.5 text-center text-sm text-black">
-          Waiting for Ableton Live: select <b>Setlist</b> as a Control Surface in Live's preferences.
+        <div className="no-print bg-panel px-4 py-2 text-center text-sm text-muted">
+          Waiting for Ableton Live. Choose <b className="text-fg">Setlist</b> as a Control Surface in Live’s preferences.
         </div>
       )}
       {state.errors.length > 0 && view !== 'settings' && (
-        <div className="no-print flex items-center justify-center gap-3 bg-danger/20 px-4 py-1 text-sm">
-          Remote Script reported errors.
-          <Button variant="ghost" onClick={() => (location.hash = '#/settings')}>Details</Button>
+        <div className="no-print bg-panel px-4 py-2 text-center text-sm">
+          The Remote Script reported an error.{' '}
+          <a href="#/settings" className="text-link">
+            Details
+          </a>
         </div>
       )}
-      <main className="min-h-0 flex-1">
+      <main className="relative min-h-0 flex-1">
         <Component />
+        <Transport />
       </main>
-      <Transport />
       <NotificationOverlay />
     </div>
   );

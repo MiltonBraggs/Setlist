@@ -28,19 +28,29 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-function Row({ parts, track, transpose }: { parts: LyricPart[]; track: LyricsTrack; transpose: { semitones: number; flats: boolean } | null }) {
+function Row({
+  parts,
+  track,
+  transpose,
+  align,
+}: {
+  parts: LyricPart[];
+  track: LyricsTrack;
+  transpose: { semitones: number; flats: boolean } | null;
+  align: 'left' | 'center';
+}) {
   const chords = track.options.chords;
   const hasChords = parts.some((p) => p.chord) && chords !== 'hide';
   if (chords === 'only') {
     const list = parts.filter((p) => p.chord).map((p) => transposeChord(p.chord!, transpose?.semitones ?? 0, transpose?.flats));
-    return list.length ? <div style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>{list.join('  ')}</div> : null;
+    return list.length ? <div style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>{list.join('   ')}</div> : null;
   }
   return (
-    <div className="flex flex-wrap items-end">
+    <div className={`flex flex-wrap items-end ${align === 'center' ? 'justify-center' : 'justify-start'}`}>
       {parts.map((p, i) => (
         <span key={i} className="inline-flex flex-col whitespace-pre">
           {hasChords && (
-            <span className="text-[0.6em] font-semibold" style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>
+            <span className="text-[0.45em] font-semibold tracking-normal" style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>
               {p.chord ? transposeChord(p.chord, transpose?.semitones ?? 0, transpose?.flats) : ' '}
             </span>
           )}
@@ -95,7 +105,7 @@ export function Lyrics() {
   const playingIdx = activeLineIndex(lines, time + latencyBeats);
   const active = pinned ?? playingIdx;
 
-  const activeRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: 'smooth', block: track?.options.top !== null && track?.options.top !== undefined ? 'start' : 'center' });
   }, [active, track?.options.top]);
@@ -122,8 +132,13 @@ export function Lyrics() {
 
   if (!track) {
     return (
-      <div className="p-8 text-center text-muted">
-        No lyrics track found. Add a MIDI track with <code>+LYRICS</code> in its name, one clip per line.
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <div className="flex max-w-md flex-col gap-3">
+          <h1 className="headline m-0 text-5xl">No lyrics yet.</h1>
+          <p className="m-0 text-[17px] text-muted">
+            Add a MIDI track with <code>+LYRICS</code> in its name to your Live set, with one clip per line.
+          </p>
+        </div>
       </div>
     );
   }
@@ -133,55 +148,92 @@ export function Lyrics() {
     const semis = (s.transpose?.semitones ?? 0) + (o.transpose?.semitones ?? 0);
     return semis || s.transpose?.flats || o.transpose?.flats ? { semitones: semis, flats: !!(s.transpose?.flats || o.transpose?.flats) } : null;
   };
-  const topPad = o.top !== null ? `${o.top * 2.2}em` : '40vh';
+  const topPad = o.top !== null ? `${o.top * 2.2}em` : '35vh';
+  const defaultAlign = o.align ?? 'center';
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="no-print flex items-center gap-2 border-b border-line p-2">
-        {tracks.length > 1 && <Select value={track.id} options={tracks.map((t) => ({ value: t.id, label: t.title }))} onChange={setTrackId} />}
-        <span className="mr-auto truncate text-sm text-muted">{song?.title}</span>
-        {pinned !== null && <Button onClick={() => setPinned(null)}>Back to current (B)</Button>}
-        <Button onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller">A−</Button>
-        <Button onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger">A+</Button>
+    <div className="flex h-full flex-col bg-panel">
+      <div className="no-print mx-auto flex w-full max-w-[980px] flex-wrap items-center gap-3 px-6 pt-5">
+        {tracks.length > 1 && <Select label="Lyrics track" value={track.id} options={tracks.map((t) => ({ value: t.id, label: t.title }))} onChange={setTrackId} />}
+        <p className="m-0 flex-1 truncate text-[15px] text-muted">
+          {song?.title ?? 'Not in a song'} · {track.title}
+        </p>
+        {pinned !== null && (
+          <Button variant="ghost" onClick={() => setPinned(null)}>
+            Back to current
+          </Button>
+        )}
+        <Button variant="outline" className="!px-0 w-11" onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller text">
+          A−
+        </Button>
+        <Button variant="outline" className="!px-0 w-11 text-lg" onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger text">
+          A+
+        </Button>
       </div>
-      <div className="flex-1 overflow-auto px-6" style={{ fontSize: `${2 * scale}rem` }}>
-        <div style={{ height: topPad }} />
-        {items.map((item) => {
-          if (item.kind === 'songTitle') {
-            return <div key={`t-${item.song.id}`} className="mt-10 border-b border-line pb-2 text-[0.7em] font-bold" style={{ color: colorOf(item.song.color, 'var(--fg)') }}>{item.song.title}</div>;
-          }
-          if (item.kind === 'header') {
-            return <div key={`h-${item.section.id}`} className="mt-6 mb-1 text-[0.5em] font-semibold uppercase tracking-wider" style={{ color: colorOf(item.section.color, 'var(--muted)') }}>{item.section.title}</div>;
-          }
-          const { line, index } = item;
-          const isActive = index === active;
-          const color = colorOf(line.color ?? o.color, 'var(--fg)');
-          const progress = isActive && o.progress ? Math.max(0, Math.min(1, (time + latencyBeats - line.start) / (line.end - line.start || 1))) : 0;
-          return (
-            <div
-              key={line.id}
-              ref={isActive ? activeRef : undefined}
-              onClick={() => !state.locked && act('jumpToTime', line.start)}
-              className={`relative origin-left cursor-pointer py-1.5 leading-snug transition-all duration-200 ${o.lineMarker && isActive ? 'border-l-4 border-accent pl-3' : ''}`}
-              style={{
-                color,
-                opacity: isActive || o.noFade ? 1 : 0.35,
-                transform: isActive || o.noZoom ? 'none' : 'scale(0.92)',
-                fontSize: SIZE[line.size ?? o.size ?? ''] ?? '1em',
-                textAlign: line.align ?? o.align ?? 'left',
-                fontFamily: line.mono || o.mono ? 'ui-monospace, monospace' : undefined,
-              }}
-            >
-              {line.image ? (
-                <img src={`/lyrics-images/${line.image.src}`} alt="" className={line.image.full ? 'max-h-[80vh] w-full object-contain' : 'max-h-[50vh]'} />
-              ) : (
-                line.rows.map((parts, i) => <Row key={i} parts={parts} track={track} transpose={transposeFor(item.song)} />)
-              )}
-              {o.progress && isActive && <div className="absolute bottom-0 left-0 h-0.5 bg-accent" style={{ width: `${progress * 100}%` }} />}
-            </div>
-          );
-        })}
-        <div style={{ height: '60vh' }} />
+      <div className="flex-1 overflow-auto px-6" style={{ fontSize: `${2.5 * scale}rem` }}>
+        <div className="mx-auto max-w-[980px]">
+          <div style={{ height: topPad }} />
+          {items.map((item) => {
+            if (item.kind === 'songTitle') {
+              return (
+                <h2 key={`t-${item.song.id}`} className="headline mt-16 mb-4 text-[0.8em]" style={{ textAlign: defaultAlign, color: item.song.color ? colorOf(item.song.color) : undefined }}>
+                  {item.song.title}
+                </h2>
+              );
+            }
+            if (item.kind === 'header') {
+              return (
+                <p
+                  key={`h-${item.section.id}`}
+                  className="mt-10 mb-2 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted"
+                  style={{ textAlign: defaultAlign, color: item.section.color ? colorOf(item.section.color) : undefined }}
+                >
+                  {item.section.title}
+                </p>
+              );
+            }
+            const { line, index } = item;
+            const isActive = index === active;
+            const ownColor = line.color ?? o.color;
+            const color = isActive || o.noFade ? (ownColor ? colorOf(ownColor) : 'var(--fg)') : ownColor ? colorOf(ownColor) : 'var(--faint)';
+            const align = line.align ?? defaultAlign;
+            const progress = isActive && o.progress ? Math.max(0, Math.min(1, (time + latencyBeats - line.start) / (line.end - line.start || 1))) : 0;
+            return (
+              <button
+                type="button"
+                key={line.id}
+                ref={isActive ? activeRef : undefined}
+                disabled={state.locked}
+                onClick={() => act('jumpToTime', line.start)}
+                aria-current={isActive ? 'true' : undefined}
+                className={`relative block w-full py-2 leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${isActive ? 'font-bold' : 'font-semibold'} ${
+                  o.lineMarker && isActive ? 'border-l-4 border-accent pl-4' : ''
+                }`}
+                style={{
+                  color,
+                  opacity: !isActive && ownColor && !o.noFade ? 0.45 : 1,
+                  transform: isActive || o.noZoom ? 'none' : 'scale(0.86)',
+                  transformOrigin: align === 'center' ? 'center' : 'left',
+                  fontSize: SIZE[line.size ?? o.size ?? ''] ?? '1em',
+                  textAlign: align,
+                  fontFamily: line.mono || o.mono ? 'ui-monospace, monospace' : undefined,
+                }}
+              >
+                {line.image ? (
+                  <img src={`/lyrics-images/${line.image.src}`} alt="" className={`mx-auto rounded-2xl ${line.image.full ? 'max-h-[80vh] w-full object-contain' : 'max-h-[50vh]'}`} />
+                ) : (
+                  line.rows.map((parts, i) => <Row key={i} parts={parts} track={track} transpose={transposeFor(item.song)} align={align} />)
+                )}
+                {o.progress && isActive && (
+                  <span className="mx-auto mt-3 block h-1 w-32 overflow-hidden rounded-full bg-line">
+                    <span className="block h-full bg-accent" style={{ width: `${progress * 100}%` }} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <div style={{ height: '60vh' }} />
+        </div>
       </div>
     </div>
   );
