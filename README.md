@@ -40,6 +40,7 @@ npm run build -w @setlist/web
 **1. Install the Remote Script.** Copy `remote-script/Setlist` to
 `Documents\Ableton\User Library\Remote Scripts\Setlist` (macOS: `~/Music/Ableton/User Library/Remote Scripts/Setlist`).
 Restart Live, then choose **Setlist** as a Control Surface under *Preferences → Link, Tempo & MIDI*, with Input and Output set to None.
+After pulling a new version of Setlist, copy the folder again and restart Live, because the script runs inside Live.
 
 **2. Run the server.**
 
@@ -59,6 +60,16 @@ npm run typecheck
 ```
 
 `SIM_SPEED=3 npm run sim` runs the simulator faster. Edit `remote-script/simulator/demo_set.json` to try other sets.
+
+## Setlists
+
+Every Live set starts with an **All songs** setlist in arrangement order. New songs you add in Live appear in it automatically.
+
+- **New setlist** (on the Setlist page, or ⇧S): name it and tap songs in the order you'll play them.
+- **Switching:** tap a setlist's pill at the top of the Setlist page. Performance, the playback plan and OSC all follow the active setlist.
+- **Edit:** drag to reorder, remove and restore songs, and add songs. Changes save automatically.
+- **Options:** rename, duplicate, delete, import or export (text or JSON), or sort back to arrangement order.
+- **New songs:** songs added in Live later show up dimmed in your own setlists, ready under *Add songs*, so a setlist you built never changes by itself.
 
 ## Owner and viewers
 
@@ -111,6 +122,7 @@ Without a locator these can only be jumped to while stopped. *Settings → Place
 - `+NEVERMUTE` / `+NM`: never muted.
 - `Click` / `+CLICK`: soloed during count-in.
 - `Measures`: one clip per bar, named with the bar label.
+- `+NOTES` / `+NOTES:ALL`: part notes (see below).
 
 ### Lyrics
 
@@ -125,6 +137,20 @@ A MIDI track flagged `+LYRICS`, with one clip per line, named with the text:
 **Several views.** Make one `+LYRICS` track per view, for example `Vocals +LYRICS`, `Chords +LYRICS [onlychords]` and
 `Harmony +LYRICS [blue]`. Each becomes a tab on the Lyrics page. If a track has chords, a *Lyrics / Lyrics + Chords / Chords*
 toggle appears. Its starting value comes from the track's `[nochords]` / `[onlychords]`, and each device remembers its own choice.
+
+### Part notes
+
+Instructions for one instrument (*Kick only*, *Full beat*) or for the whole band (*STOP – only piano*):
+
+| Track | Who sees it |
+|---|---|
+| `Drums +NOTES`, `Keys +NOTES`, … | Devices that follow that part. Each device picks its parts under *Parts…* on the Performance page |
+| `Band +NOTES:ALL` | Every device, as an orange callout. It also appears 8 bars before it starts, with a countdown |
+| `> Bridge {STOP – only piano}` (section description) | Every device, while that section plays |
+
+Each clip's name is the instruction, shown while the playhead is inside the clip, and `**bold**` and `[color]` work.
+The next instruction shows with a bar countdown, for example *Then Full beat · in 2 bars*. Notes appear on the
+Performance page and as a strip at the top of the Lyrics page.
 
 ## Control
 
@@ -171,4 +197,5 @@ which songs it contains.
 - **STOP and +PAUSE timing.** These fire on the Remote Script's ~100 ms tick, so playback can stop up to about 100 ms after the locator. Place STOP locators slightly after the song's tail.
 - **Locator grid.** Put locators on the bar or beat grid. Off-grid targets fall back to a less precise jump.
 - **Tempo changes.** Song durations assume the tempo shown in Live; tempo automation isn't accounted for.
+- **Screen sizes.** The Performance page fits laptop screens down to a 1280×650 browser window without scrolling. On phones it stacks and scrolls.
 - **Not built yet.** Canvas builder, voice cues/TTS, AbleNet redundancy, audio interface control and multi-file projects.

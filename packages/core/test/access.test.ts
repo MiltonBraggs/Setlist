@@ -39,7 +39,9 @@ describe('access', () => {
     expect(canDispatch('viewer', drummer, 'play')).toBe(true);
     expect(canDispatch('viewer', drummer, 'nextSong')).toBe(false);
     expect(canDispatch('viewer', { ...viewer, navigate: true }, 'jumpToSection')).toBe(true);
-    expect(canDispatch('viewer', { ...viewer, editSetlist: true }, 'saveSetlist')).toBe(true);
+    expect(canDispatch('viewer', { ...viewer, editSetlist: true }, 'createSetlist')).toBe(true);
+    expect(canDispatch('viewer', { ...viewer, editSetlist: true }, 'selectSetlist')).toBe(true);
+    expect(canDispatch('viewer', viewer, 'selectSetlist')).toBe(false);
     expect(canDispatch('viewer', { ...viewer, mixer: true }, 'mixerGroup')).toBe(true);
   });
 

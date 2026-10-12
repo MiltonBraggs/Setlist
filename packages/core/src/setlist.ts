@@ -10,17 +10,67 @@ export interface SetlistEntry {
 }
 
 export interface Setlist {
+  id: string;
   name: string;
   entries: SetlistEntry[];
+  /**
+   * New songs in Live are added (active) automatically. True for the default "All songs" setlist;
+   * setlists built by picking songs get new songs as removed, ready in "Add songs".
+   */
+  autoAdd?: boolean;
 }
 
-/** Keep a saved setlist in sync with the songs currently in Live. */
-export function reconcileSetlist(setlist: Setlist | null, songs: Song[]): Setlist {
+export interface SetlistSummary {
+  id: string;
+  name: string;
+  songCount: number;
+  /** seconds */
+  duration: number;
+}
+
+export const ALL_SONGS_NAME = 'All songs';
+
+/** Keep a stored setlist in sync with the songs currently in Live. */
+export function reconcileSetlist(setlist: Setlist, songs: Song[]): Setlist {
   const ids = new Set(songs.map((s) => s.id));
-  const entries = (setlist?.entries ?? []).filter((e) => ids.has(e.songId));
-  const present = new Set(entries.map((e) => e.songId));
-  for (const song of songs) if (!present.has(song.id)) entries.push({ songId: song.id });
-  return { name: setlist?.name ?? 'Untitled Setlist', entries };
+  const present = new Set<string>();
+  const entries: SetlistEntry[] = [];
+  for (const e of setlist.entries) {
+    // Drop songs that no longer exist and any duplicate entries.
+    if (!ids.has(e.songId) || present.has(e.songId)) continue;
+    present.add(e.songId);
+    entries.push(e);
+  }
+  for (const song of songs) {
+    if (!present.has(song.id)) entries.push(setlist.autoAdd ? { songId: song.id } : { songId: song.id, removed: true });
+  }
+  return { ...setlist, entries };
+}
+
+/** A setlist made by picking songs: the picks in order, every other song available but removed. */
+export function createSetlist(id: string, name: string, songIds: string[], songs: Song[]): Setlist {
+  const known = new Set(songs.map((s) => s.id));
+  const picked = [...new Set(songIds)].filter((sid) => known.has(sid));
+  const pickedSet = new Set(picked);
+  return {
+    id,
+    name,
+    autoAdd: false,
+    entries: [...picked.map((songId) => ({ songId })), ...songs.filter((s) => !pickedSet.has(s.id)).map((s) => ({ songId: s.id, removed: true }))],
+  };
+}
+
+export function summarizeSetlist(setlist: Setlist, songs: Song[]): SetlistSummary {
+  const byId = new Map(songs.map((s) => [s.id, s]));
+  let songCount = 0;
+  let duration = 0;
+  for (const e of setlist.entries) {
+    const song = byId.get(e.songId);
+    if (e.removed || !song) continue;
+    if (!song.noSong) songCount++;
+    duration += song.duration;
+  }
+  return { id: setlist.id, name: setlist.name, songCount, duration };
 }
 
 /** Song ids that will be played, in order. */
@@ -109,11 +159,11 @@ export function setlistToText(setlist: Setlist, songs: Song[]): string {
 }
 
 export interface TextImportResult {
-  setlist: Setlist;
+  entries: SetlistEntry[];
   unmatched: string[];
 }
 
-export function setlistFromText(text: string, songs: Song[], name = 'Imported Setlist'): TextImportResult {
+export function setlistFromText(text: string, songs: Song[]): TextImportResult {
   const entries: SetlistEntry[] = [];
   const unmatched: string[] = [];
   let pendingStop: string | undefined;
@@ -132,6 +182,7 @@ export function setlistFromText(text: string, songs: Song[], name = 'Imported Se
       unmatched.push(line);
       continue;
     }
+    if (entries.some((e) => e.songId === song.id)) continue; // each song once
     const entry: SetlistEntry = { songId: song.id };
     if (descMatch && descMatch[1].trim() !== (song.description ?? '')) entry.description = descMatch[1].trim();
     if (pendingStop) entry.stopDescription = pendingStop;
@@ -141,5 +192,5 @@ export function setlistFromText(text: string, songs: Song[], name = 'Imported Se
   // Songs not mentioned are kept but removed, so they stay available in the editor.
   const listed = new Set(entries.map((e) => e.songId));
   for (const song of songs) if (!listed.has(song.id)) entries.push({ songId: song.id, removed: true });
-  return { setlist: { name, entries }, unmatched };
+  return { entries, unmatched };
 }

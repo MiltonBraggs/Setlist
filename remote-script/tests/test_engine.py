@@ -117,6 +117,37 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(live.quant, 4, "quantization restored")
         self.assertTrue(any(m.get("event") == "jump" for m in sent))
 
+    def test_fast_tempo_plan_jump_happens_once(self):
+        # 0.7 beats per tick (e.g. 210 bpm, or slower with a laggy ~100 ms tick): the playhead is well past
+        # the target when the engine next looks. Must not be mistaken for a missed jump.
+        live, engine, _ = make([0, 64, 96], {"events": [{"at": 64, "type": "jump", "to": 96}], "loops": []}, step=0.7)
+        engine.play()
+        run(engine, live, 160)
+        self.assertEqual([e for e in live.log if e[0] in ("jump", "jump_by")], [("jump", 64.0, 96.0)])
+        self.assertEqual(live.quant, 4)
+        self.assertGreater(live.t, 100)
+
+    def test_backward_plan_jump_finishes_and_does_not_repeat(self):
+        # "> Outro >>> Chorus": jump back from 32 to 8, then play on without jumping again early.
+        live, engine, _ = make([0, 8, 32], {"events": [{"at": 32, "type": "jump", "to": 8}], "loops": []}, step=0.6)
+        engine.play()
+        run(engine, live, 70)  # reach 32 (~54 ticks), jump back to 8, continue to ~17
+        jumps = [e for e in live.log if e[0] in ("jump", "jump_by")]
+        self.assertEqual(jumps, [("jump", 32.0, 8.0)])
+        self.assertIsNone(engine.pending)
+        self.assertEqual(live.quant, 4, "quantization restored right after the jump")
+
+    def test_manual_jump_cancels_an_armed_jump(self):
+        live, engine, _ = make([0, 16, 48], {"events": [{"at": 16, "type": "jump", "to": 48}], "loops": []})
+        engine.play()
+        run(engine, live, 66)  # inside the arming window before 16
+        self.assertIsNotNone(engine.pending)
+        live.scheduled = None  # the user jumped elsewhere: Live drops the scheduled jump
+        live.t = 100.0
+        run(engine, live, 2)
+        self.assertIsNone(engine.pending)
+        self.assertEqual(live.quant, 4)
+
     def test_stop_and_relocate(self):
         live, engine, sent = make([0, 16, 32], {"events": [{"at": 16, "type": "stop", "relocate": 32}], "loops": []})
         engine.play()

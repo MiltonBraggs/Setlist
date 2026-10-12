@@ -286,6 +286,8 @@ export interface ParsedTrack {
   loopGuide: boolean;
   jumpGuide: boolean;
   neverMute: boolean;
+  /** `+NOTES` (a part's instructions, followed per device) or `+NOTES:ALL` (shown to everyone). */
+  notes: false | 'part' | 'all';
   groups: string[];
   /** Bracket attributes (lyrics display options, colors, transpose...). */
   attrs: string[];
@@ -324,6 +326,7 @@ export function parseTrackName(raw: string): ParsedTrack {
     loopGuide: upperFlags.includes('LOOPGUIDE'),
     jumpGuide: upperFlags.includes('JUMPGUIDE'),
     neverMute: upperFlags.includes('NEVERMUTE') || upperFlags.includes('NM'),
+    notes: upperFlags.includes('NOTES:ALL') ? 'all' : upperFlags.includes('NOTES') ? 'part' : false,
     groups,
     attrs,
     color,

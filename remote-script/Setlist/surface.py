@@ -24,9 +24,9 @@ CUE_EPS = 1e-3
 
 
 def is_clip_track(name):
-    """Tracks whose arrangement clips we report: sections, lyrics, measures."""
+    """Tracks whose arrangement clips we report: sections, lyrics, notes, measures."""
     upper = name.upper()
-    if "+SECTIONS" in upper or "+LYRICS" in upper or "+MEASURES" in upper:
+    if "+SECTIONS" in upper or "+LYRICS" in upper or "+MEASURES" in upper or "+NOTES" in upper:
         return True
     base = name.split("+")[0].split("[")[0].strip().lower()
     return base in ("sections", "measures")
@@ -89,7 +89,11 @@ class Listeners(object):
         self._items = []
 
     def add(self, obj, prop, fn):
-        getattr(obj, "add_%s_listener" % prop)(fn)
+        # A property that isn't observable in this Live version must never stop the script loading.
+        try:
+            getattr(obj, "add_%s_listener" % prop)(fn)
+        except (AttributeError, RuntimeError):
+            return
         self._items.append((obj, prop, fn))
 
     def clear(self):
@@ -113,6 +117,9 @@ class SetlistSurface(ControlSurface):
         self._cue_listeners = Listeners()
         self._track_listeners = Listeners()
         self._dirty = set()
+        # Track indices whose mute / solo / volume changed: sent as a small "mixer" message,
+        # so fader moves and automation never resend every clip.
+        self._mixer_dirty = set()
         self._last_time_sent = 0.0
         self._last_time_value = None
         self._was_playing = self._song.is_playing
@@ -188,17 +195,22 @@ class SetlistSurface(ControlSurface):
             self._dirty.add("tracks")
             self._dirty.add("rebuild_tracks")
 
-        for track in self._song.tracks:
+        for index, track in enumerate(self._song.tracks):
+            def mark_mixer(i=index):
+                self._mixer_dirty.add(i)
+
             add(track, "name", mark_rebuild)
             add(track, "color", mark)
-            add(track, "mute", mark)
-            add(track, "solo", mark)
-            add(track.mixer_device.volume, "value", mark)
+            add(track, "mute", mark_mixer)
+            add(track, "solo", mark_mixer)
+            add(track.mixer_device.volume, "value", mark_mixer)
             if is_clip_track(track.name) and hasattr(track, "arrangement_clips"):
                 add(track, "arrangement_clips", mark_rebuild)
                 for clip in track.arrangement_clips:
                     add(clip, "name", mark)
                     add(clip, "start_time", mark)
+                    add(clip, "end_time", mark)
+                    add(clip, "color", mark)
 
     def _on_time(self):
         # Streaming only; actions happen in update_display().
@@ -305,11 +317,24 @@ class SetlistSurface(ControlSurface):
             patch["cues"] = self._cues()
         if "tracks" in self._dirty:
             patch["tracks"] = self._tracks()
+            self._mixer_dirty.clear()  # included in the full track list
         self._dirty.clear()
         if patch:
             self._send({"type": "patch", "state": patch})
+        if self._mixer_dirty:
+            self._send({"type": "mixer", "tracks": self._mixer_state(self._mixer_dirty)})
+            self._mixer_dirty.clear()
         if self._meters:
             self._send({"type": "meters", "levels": self._meter_levels()})
+
+    def _mixer_state(self, indices):
+        tracks = self._song.tracks
+        result = []
+        for i in sorted(indices):
+            if 0 <= i < len(tracks):
+                t = tracks[i]
+                result.append(["t%d" % i, t.mute, t.solo, t.mixer_device.volume.value])
+        return result
 
     def _meter_levels(self):
         levels = []

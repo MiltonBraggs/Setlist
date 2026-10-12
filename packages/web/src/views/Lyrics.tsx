@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activeLineIndex,
   activeOrder,
@@ -7,6 +7,7 @@ import {
   lyricsTracks,
   parseInline,
   transposeChord,
+  type InlineToken,
   type LyricLine,
   type LyricPart,
   type LyricsTrack,
@@ -14,6 +15,8 @@ import {
   type Song,
 } from '@setlist/core';
 import { act, useAccess, usePlayhead, usePref, useStore } from '../store.ts';
+import { InlinePieces } from '../components/InlineText.tsx';
+import { NotesBanner } from '../components/Notes.tsx';
 import { Button, Segmented, colorOf } from '../components/ui.tsx';
 
 type ChordMode = 'show' | 'hide' | 'only';
@@ -26,51 +29,168 @@ const CHORD_MODES: { value: ChordMode; label: string }[] = [
 
 const SIZE: Record<string, string> = { large: '1.35em', small: '0.8em', tiny: '0.65em' };
 
-function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {parseInline(text).map((t, i) =>
-        t.bold ? <strong key={i}>{t.text}</strong> : t.italic ? <em key={i}>{t.text}</em> : <Fragment key={i}>{t.text}</Fragment>,
-      )}
-    </>
-  );
+interface Block {
+  chord?: string;
+  pieces: InlineToken[];
+  /** A space follows this block in the text. */
+  spaceAfter: boolean;
+}
+
+/**
+ * Split a row into word blocks, each optionally carrying the chord that starts on it.
+ * Blocks wrap independently, so long lines never run off a phone screen.
+ */
+function toBlocks(parts: LyricPart[]): Block[] {
+  const blocks: Block[] = [];
+  let cur: Block | null = null;
+  for (const part of parts) {
+    let chord = part.chord;
+    for (const tok of parseInline(part.text)) {
+      for (const piece of tok.text.split(/(\s+)/)) {
+        if (!piece) continue;
+        if (/^\s+$/.test(piece)) {
+          if (cur) cur.spaceAfter = true;
+          cur = null;
+          continue;
+        }
+        if (!cur || chord !== undefined) {
+          cur = { chord, pieces: [], spaceAfter: false };
+          blocks.push(cur);
+          chord = undefined;
+        }
+        cur.pieces.push({ ...tok, text: piece });
+      }
+    }
+    if (chord !== undefined) {
+      // A chord with no word under it ("[G] [Am]").
+      blocks.push({ chord, pieces: [], spaceAfter: true });
+      cur = null;
+    }
+  }
+  return blocks;
+}
+
+/** Blocks with no space between them ("Ne[G]on") form one word that must not wrap apart. */
+function toWords(blocks: Block[]): Block[][] {
+  const words: Block[][] = [];
+  let word: Block[] = [];
+  for (const b of blocks) {
+    word.push(b);
+    if (b.spaceAfter) {
+      words.push(word);
+      word = [];
+    }
+  }
+  if (word.length) words.push(word);
+  return words;
 }
 
 function Row({
   parts,
-  track,
-  transpose,
+  chordColor,
+  semitones,
+  flats,
   align,
   chords,
 }: {
   parts: LyricPart[];
-  track: LyricsTrack;
-  transpose: { semitones: number; flats: boolean } | null;
+  chordColor?: string;
+  semitones: number;
+  flats: boolean;
   align: 'left' | 'center';
   chords: ChordMode;
 }) {
-  const hasChords = parts.some((p) => p.chord) && chords !== 'hide';
+  const color = colorOf(chordColor, 'var(--accent)');
   if (chords === 'only') {
-    const list = parts.filter((p) => p.chord).map((p) => transposeChord(p.chord!, transpose?.semitones ?? 0, transpose?.flats));
-    return list.length ? <div style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>{list.join('   ')}</div> : null;
+    const list = parts.filter((p) => p.chord).map((p) => transposeChord(p.chord!, semitones, flats));
+    return list.length ? <div style={{ color }}>{list.join('   ')}</div> : null;
   }
+  const showChords = chords !== 'hide' && parts.some((p) => p.chord);
+  const words = toWords(toBlocks(parts));
   return (
     <div className={`flex flex-wrap items-end ${align === 'center' ? 'justify-center' : 'justify-start'}`}>
-      {parts.map((p, i) => (
-        <span key={i} className="inline-flex flex-col whitespace-pre">
-          {hasChords && (
-            <span className="text-[0.45em] font-semibold tracking-normal" style={{ color: colorOf(track.options.chordColor, 'var(--accent)') }}>
-              {p.chord ? transposeChord(p.chord, transpose?.semitones ?? 0, transpose?.flats) : ' '}
+      {words.map((word, w) => (
+        <span key={w} className="inline-flex max-w-full items-end" style={word[word.length - 1].spaceAfter ? { marginRight: '0.28em' } : undefined}>
+          {word.map((b, i) => (
+            <span key={i} className="inline-flex min-w-0 flex-col [overflow-wrap:anywhere]">
+              {showChords && (
+                <span className="text-[0.45em] font-semibold tracking-normal" style={{ color }}>
+                  {b.chord ? transposeChord(b.chord, semitones, flats) : '\u00a0'}
+                </span>
+              )}
+              <span>{b.pieces.length ? <InlinePieces pieces={b.pieces} /> : '\u00a0'}</span>
             </span>
-          )}
-          <span>
-            <Inline text={p.text} />
-          </span>
+          ))}
         </span>
       ))}
     </div>
   );
 }
+
+/** One lyric line. Memoised: only the active line re-renders while playing. */
+const LineView = memo(function LineView({
+  line,
+  isActive,
+  progress,
+  options: o,
+  chords,
+  semitones,
+  flats,
+  defaultAlign,
+  canJump,
+  activeRef,
+}: {
+  line: LyricLine;
+  isActive: boolean;
+  progress: number;
+  options: LyricsTrack['options'];
+  chords: ChordMode;
+  semitones: number;
+  flats: boolean;
+  defaultAlign: 'left' | 'center';
+  canJump: boolean;
+  activeRef: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const ownColor = line.color ?? o.color;
+  const color = isActive || o.noFade ? (ownColor ? colorOf(ownColor) : 'var(--fg)') : ownColor ? colorOf(ownColor) : 'var(--faint)';
+  const align = line.align ?? defaultAlign;
+  return (
+    <button
+      type="button"
+      ref={isActive ? activeRef : undefined}
+      disabled={!canJump}
+      onClick={() => act('jumpToTime', line.start)}
+      aria-current={isActive ? 'true' : undefined}
+      className={`relative block w-full py-2 leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${isActive ? 'font-bold' : 'font-semibold'} ${
+        o.lineMarker && isActive ? 'border-l-4 border-accent pl-4' : ''
+      }`}
+      style={{
+        color,
+        opacity: !isActive && ownColor && !o.noFade ? 0.45 : 1,
+        transform: isActive || o.noZoom ? 'none' : 'scale(0.86)',
+        transformOrigin: align === 'center' ? 'center' : 'left',
+        fontSize: SIZE[line.size ?? o.size ?? ''] ?? '1em',
+        textAlign: align,
+        fontFamily: line.mono || o.mono ? 'ui-monospace, monospace' : undefined,
+      }}
+    >
+      {line.image ? (
+        <img
+          src={`/lyrics-images/${line.image.src}`}
+          alt=""
+          className={`mx-auto max-w-full rounded-2xl ${line.image.full ? 'max-h-[80vh] w-full object-contain' : 'max-h-[50vh]'}`}
+        />
+      ) : (
+        line.rows.map((parts, i) => <Row key={i} parts={parts} chordColor={o.chordColor} semitones={semitones} flats={flats} align={align} chords={chords} />)
+      )}
+      {o.progress && isActive && (
+        <span className="mx-auto mt-3 block h-1 w-32 overflow-hidden rounded-full bg-line">
+          <span className="block h-full bg-accent" style={{ width: `${progress * 100}%` }} />
+        </span>
+      )}
+    </button>
+  );
+});
 
 type Item = { kind: 'header'; section: Section; song: Song } | { kind: 'songTitle'; song: Song } | { kind: 'line'; line: LyricLine; index: number; song: Song };
 
@@ -78,7 +198,7 @@ export function Lyrics() {
   const state = useStore((s) => s.state)!;
   const time = usePlayhead();
   const access = useAccess();
-  const allTracks = useMemo(() => lyricsTracks(state.live.tracks), [state.live.tracks]);
+  const allTracks = useMemo(() => lyricsTracks(state.tracks), [state.tracks]);
   const tracks = allTracks.filter((t) => access.canSeeLyrics(t.title));
   const canJump = access.can('navigate') && !state.locked;
   // Remembered by title so it survives track reordering in Live.
@@ -101,9 +221,11 @@ export function Lyrics() {
     return song ? [song] : [];
   }, [track, song, state.songs, state.setlist]);
 
-  const items: Item[] = [];
-  const lines: LyricLine[] = [];
-  if (track) {
+  // Built once per song / track change, not on every animation frame.
+  const { items, lines } = useMemo(() => {
+    const items: Item[] = [];
+    const lines: LyricLine[] = [];
+    if (!track) return { items, lines };
     for (const s of songsToShow) {
       if (track.options.allSongs) items.push({ kind: 'songTitle', song: s });
       const songLines = linesForSong(track, s);
@@ -116,7 +238,8 @@ export function Lyrics() {
         lines.push(line);
       }
     }
-  }
+    return { items, lines };
+  }, [track, songsToShow]);
   const latencyBeats = track ? (track.options.latency / 1000) * (state.live.tempo / 60) : 0;
   const playingIdx = activeLineIndex(lines, time + latencyBeats);
   const active = pinned ?? playingIdx;
@@ -166,34 +289,41 @@ export function Lyrics() {
   }
 
   const o = track.options;
-  const transposeFor = (s: Song) => {
-    const semis = (s.transpose?.semitones ?? 0) + (o.transpose?.semitones ?? 0);
-    return semis || s.transpose?.flats || o.transpose?.flats ? { semitones: semis, flats: !!(s.transpose?.flats || o.transpose?.flats) } : null;
-  };
+  const semitonesFor = (s: Song) => (s.transpose?.semitones ?? 0) + (o.transpose?.semitones ?? 0);
+  const flatsFor = (s: Song) => !!(s.transpose?.flats || o.transpose?.flats);
   const topPad = o.top !== null ? `${o.top * 2.2}em` : '35vh';
   const defaultAlign = o.align ?? 'center';
 
   return (
     <div className="flex h-full flex-col bg-panel">
-      <div className="no-print mx-auto flex w-full max-w-[980px] flex-wrap items-center gap-3 px-6 pt-5">
+      {/* One row; scrolls sideways on narrow phones instead of eating the lyrics' height. */}
+      <div className="no-print mx-auto flex w-full max-w-[980px] items-center gap-2 overflow-x-auto px-4 pt-3 [scrollbar-width:none] sm:gap-3 sm:px-6 sm:pt-4">
         {tracks.length > 1 && (
-          <Segmented label="Lyrics track" value={track.title} options={tracks.map((t) => ({ value: t.title, label: t.title }))} onChange={setTrackTitle} className="flex-nowrap" />
+          <Segmented
+            label="Lyrics track"
+            value={track.title}
+            options={tracks.map((t) => ({ value: t.title, label: t.title }))}
+            onChange={setTrackTitle}
+            className="shrink-0 flex-nowrap"
+          />
         )}
-        {hasChords && <Segmented label="Show" value={chordMode} options={CHORD_MODES} onChange={(m) => setModes({ ...modes, [track.title]: m })} className="flex-nowrap" />}
-        <p className="m-0 min-w-[120px] flex-1 truncate text-[15px] text-muted">{song?.title ?? 'Not in a song'}</p>
+        {hasChords && <Segmented label="Show" value={chordMode} options={CHORD_MODES} onChange={(m) => setModes({ ...modes, [track.title]: m })} className="shrink-0 flex-nowrap" />}
+        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted">{song?.title ?? 'Not in a song'}</p>
         {pinned !== null && (
           <Button variant="ghost" onClick={() => setPinned(null)}>
             Back to current
           </Button>
         )}
-        <Button variant="outline" className="!px-0 w-11" onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller text">
+        <Button variant="outline" className="!px-0 w-11 shrink-0" onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller text">
           A−
         </Button>
-        <Button variant="outline" className="!px-0 w-11 text-lg" onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger text">
+        <Button variant="outline" className="!px-0 w-11 shrink-0 text-lg" onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger text">
           A+
         </Button>
       </div>
-      <div className="flex-1 overflow-auto px-6" style={{ fontSize: `${2.5 * scale}rem` }}>
+      <NotesBanner time={time} song={song} section={song?.sections[loc.sectionIndex]} />
+      {/* Smaller base size on narrow screens so lines fit; A- / A+ scale it. */}
+      <div className="flex-1 overflow-x-hidden overflow-y-auto px-4 sm:px-6" style={{ fontSize: `calc(clamp(1.5rem, 6.5vw, 2.5rem) * ${scale})` }}>
         <div className="mx-auto max-w-[980px]">
           <div style={{ height: topPad }} />
           {items.map((item) => {
@@ -217,42 +347,21 @@ export function Lyrics() {
             }
             const { line, index } = item;
             const isActive = index === active;
-            const ownColor = line.color ?? o.color;
-            const color = isActive || o.noFade ? (ownColor ? colorOf(ownColor) : 'var(--fg)') : ownColor ? colorOf(ownColor) : 'var(--faint)';
-            const align = line.align ?? defaultAlign;
             const progress = isActive && o.progress ? Math.max(0, Math.min(1, (time + latencyBeats - line.start) / (line.end - line.start || 1))) : 0;
             return (
-              <button
-                type="button"
+              <LineView
                 key={line.id}
-                ref={isActive ? activeRef : undefined}
-                disabled={!canJump}
-                onClick={() => act('jumpToTime', line.start)}
-                aria-current={isActive ? 'true' : undefined}
-                className={`relative block w-full py-2 leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${isActive ? 'font-bold' : 'font-semibold'} ${
-                  o.lineMarker && isActive ? 'border-l-4 border-accent pl-4' : ''
-                }`}
-                style={{
-                  color,
-                  opacity: !isActive && ownColor && !o.noFade ? 0.45 : 1,
-                  transform: isActive || o.noZoom ? 'none' : 'scale(0.86)',
-                  transformOrigin: align === 'center' ? 'center' : 'left',
-                  fontSize: SIZE[line.size ?? o.size ?? ''] ?? '1em',
-                  textAlign: align,
-                  fontFamily: line.mono || o.mono ? 'ui-monospace, monospace' : undefined,
-                }}
-              >
-                {line.image ? (
-                  <img src={`/lyrics-images/${line.image.src}`} alt="" className={`mx-auto rounded-2xl ${line.image.full ? 'max-h-[80vh] w-full object-contain' : 'max-h-[50vh]'}`} />
-                ) : (
-                  line.rows.map((parts, i) => <Row key={i} parts={parts} track={track} transpose={transposeFor(item.song)} align={align} chords={chordMode} />)
-                )}
-                {o.progress && isActive && (
-                  <span className="mx-auto mt-3 block h-1 w-32 overflow-hidden rounded-full bg-line">
-                    <span className="block h-full bg-accent" style={{ width: `${progress * 100}%` }} />
-                  </span>
-                )}
-              </button>
+                line={line}
+                isActive={isActive}
+                progress={progress}
+                options={o}
+                chords={chordMode}
+                semitones={semitonesFor(item.song)}
+                flats={flatsFor(item.song)}
+                defaultAlign={defaultAlign}
+                canJump={canJump}
+                activeRef={activeRef}
+              />
             );
           })}
           <div style={{ height: '60vh' }} />

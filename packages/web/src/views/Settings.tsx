@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
-import { act, useStore } from '../store.ts';
+import { act, actThrottled, useStore } from '../store.ts';
 import { PinDialog } from '../components/Access.tsx';
 import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
 
@@ -52,7 +52,7 @@ function ViewerAccess() {
   const viewer = state.settings.viewer;
   const [pinOpen, setPinOpen] = useState(false);
   const set = (patch: Partial<ViewerPermissions>) => act('updateSettings', { viewer: { ...viewer, ...patch } });
-  const lyricTitles = [...new Set(lyricsTracks(state.live.tracks).map((t) => t.title))];
+  const lyricTitles = [...new Set(lyricsTracks(state.tracks).map((t) => t.title))];
   const allowedLyrics = viewer.lyricsTracks ?? lyricTitles;
   const { pinSet, owners, viewers } = state.access;
 
@@ -118,6 +118,31 @@ function ViewerAccess() {
   );
 }
 
+/** Follows the drag locally; sends at most ~10 updates a second. */
+function TextSizeSlider({ value }: { value: number }) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const release = () => setTimeout(() => setDrag(null), 300);
+  return (
+    <input
+      type="range"
+      aria-label="Text size"
+      min={0.75}
+      max={1.5}
+      step={0.05}
+      value={drag ?? value}
+      onChange={(e) => {
+        const v = Number(e.target.value);
+        setDrag(v);
+        actThrottled('fontScale', 100, 'updateSettings', { fontScale: v });
+      }}
+      onPointerUp={release}
+      onKeyUp={release}
+      onBlur={() => setDrag(null)}
+      className="w-52 accent-[var(--accent)]"
+    />
+  );
+}
+
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
     <label className="flex items-center gap-2 text-sm text-muted">
@@ -144,7 +169,7 @@ export function SettingsView() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-16 pb-44">
+      <div className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-16 pb-12">
         <h1 className="headline m-0 text-[clamp(48px,7vw,72px)]">Settings.</h1>
 
         <Group title="Connection">
@@ -267,16 +292,7 @@ export function SettingsView() {
             />
           </Row>
           <Row label="Text size">
-            <input
-              type="range"
-              aria-label="Text size"
-              min={0.75}
-              max={1.5}
-              step={0.05}
-              value={s.fontScale}
-              onChange={(e) => set({ fontScale: Number(e.target.value) })}
-              className="w-52 accent-[var(--accent)]"
-            />
+            <TextSizeSlider value={s.fontScale} />
           </Row>
         </Group>
 

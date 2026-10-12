@@ -18,6 +18,8 @@ Q_BAR = 4
 GRID = [(5, 2.0), (7, 1.0), (9, 0.5), (11, 0.25), (13, 0.125)]
 # Playhead moves larger than this between two updates are jumps, not playback.
 DISCONTINUITY_BEATS = 1.0
+# How far past a jump target the playhead may be when we next look (fast tempos, slow ticks).
+LANDING_ZONE_BEATS = 4.0
 
 
 def _on_grid(value, step):
@@ -143,16 +145,18 @@ class JumpEngine(object):
         if not self.live.is_playing() or last is None:
             return
 
-        if t < last - EPS:
+        backwards = t < last - EPS
+        continuous = not backwards and t - last <= DISCONTINUITY_BEATS
+        # Always first: a jump (forward or backward) may be the one we armed.
+        self._update_pending(t, jumped=not continuous)
+        if backwards:
             self._on_backwards(last, t)
             return
-        continuous = t - last <= DISCONTINUITY_BEATS
 
         if self.count_in and last < self.count_in["target"] - EPS <= t:
             self.count_in["done"]()
             self.count_in = None
 
-        self._update_pending(t)
         if not continuous:
             self._update_loops(t)
             return
@@ -222,7 +226,7 @@ class JumpEngine(object):
         window = self._window_for(event["at"])
         if event["at"] - window - EPS <= t < event["at"] - EPS:
             self.pending = self._make_pending(event["at"], event["to"], "plan")
-            self._update_pending(t)
+            self._update_pending(t, jumped=False)
 
     def _window_for(self, at):
         num, den = self.live.signature()
@@ -234,7 +238,8 @@ class JumpEngine(object):
                 return step
         return 0.0
 
-    def _update_pending(self, t):
+    def _update_pending(self, t, jumped):
+        """`jumped`: the playhead moved discontinuously (backwards or a leap) since the last update."""
         p = self.pending
         if p is None:
             return
@@ -244,8 +249,15 @@ class JumpEngine(object):
                 self._finish_pending()
             return
         if p["armed"]:
-            if abs(t - to) < 0.25:
+            # After Live performs the jump the playhead is at `to` plus however far it played
+            # since (up to a tick: more at fast tempos), so judge by the landing zone, not
+            # by distance to `to`.
+            landed = to - 0.05 <= t <= to + LANDING_ZONE_BEATS
+            if landed and (jumped or to > at):
                 self._finish_pending()
+            elif jumped:
+                # Moved somewhere else (a manual jump, a loop wrap): this jump is off.
+                self._abandon_pending()
             elif t >= at + 0.05:
                 # Live didn't jump (e.g. quantization changed under us): fall back,
                 # keeping the rhythmic phase by jumping relative to the boundary.
@@ -269,6 +281,13 @@ class JumpEngine(object):
             self._leave_loop_if_outside(to)
             self.live.jump_by(to - at)
             self._finish_pending()
+
+    def _abandon_pending(self):
+        p = self.pending
+        self._finish_pending(restore_only=True)
+        if p is not None and p["source"] == "queue":
+            self.queued_at = None
+            self.send({"type": "fired", "event": "queued", "at": p["at"]})
 
     def _finish_pending(self, restore_only=False):
         p = self.pending

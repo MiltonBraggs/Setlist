@@ -100,3 +100,15 @@ export const DEFAULT_SETTINGS: Settings = {
   midiMappings: [],
   viewer: DEFAULT_VIEWER_PERMISSIONS,
 };
+
+/** Mute / solo / volume changes for some tracks: [id, mute, solo, volume]. */
+export type MixerUpdate = [id: string, mute: boolean, solo: boolean, volume: number][];
+
+/** Apply a mixer update; unchanged tracks keep their identity. */
+export function applyMixerUpdate(tracks: LiveTrack[], update: MixerUpdate): LiveTrack[] {
+  const byId = new Map(update.map((u) => [u[0], u]));
+  return tracks.map((t) => {
+    const u = byId.get(t.id);
+    return u ? { ...t, mute: !!u[1], solo: !!u[2], volume: Number(u[3]) || 0 } : t;
+  });
+}

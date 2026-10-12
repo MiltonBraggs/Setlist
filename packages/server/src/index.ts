@@ -57,12 +57,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   );
 
   const fastify = Fastify({ logger: false });
-  await fastify.register(fastifyWebsocket);
+  // Client messages are small; refuse anything big.
+  await fastify.register(fastifyWebsocket, { options: { maxPayload: 1024 * 1024 } });
 
   const access = new AccessControl(storage);
 
   interface Client {
     send: (data: string) => void;
+    /** For playhead frames: skipped while the device is behind (slow Wi-Fi), the next one supersedes it. */
+    sendDroppable: (data: string) => void;
     meters: boolean;
     /** The host computer is always owner, so you can't lock yourself out. */
     local: boolean;
@@ -89,6 +92,19 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     for (const c of clients) c.send(data);
   };
 
+  // OSC subscribers get playhead-driven values (progress, remaining) at most ~15 times a second.
+  let lastOscPublish = 0;
+  const publishOsc = (force: boolean) => {
+    const now = Date.now();
+    if (!force && now - lastOscPublish < 66) return;
+    lastOscPublish = now;
+    try {
+      oscService.publish(app.state, app.time, app.playing);
+    } catch (err) {
+      console.error('[osc] publish failed', err);
+    }
+  };
+
   // Coalesce state patches per event-loop turn.
   let pending: Record<string, unknown> | null = null;
   app.on('patch', (partial) => {
@@ -98,15 +114,17 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
         const state = pending!;
         pending = null;
         broadcast({ type: 'patch', state });
-        oscService.publish(app.state, app.time, app.playing);
+        publishOsc(true);
       });
     }
     Object.assign(pending, partial);
   });
   app.on('time', (time, playing) => {
-    broadcast({ type: 'time', time, playing });
-    oscService.publish(app.state, time, playing);
+    const data = JSON.stringify({ type: 'time', time, playing } satisfies ServerToClient);
+    for (const c of clients) c.sendDroppable(data);
+    publishOsc(false);
   });
+  app.on('mixer', (tracks) => broadcast({ type: 'mixer', tracks }));
   app.on('meters', (levels) => {
     const data = JSON.stringify({ type: 'meters', levels } satisfies ServerToClient);
     for (const c of clients) if (c.meters) c.send(data);
@@ -117,6 +135,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       const address = req.socket.remoteAddress ?? '';
       const client: Client = {
         send: (d: string) => socket.readyState === 1 && socket.send(d),
+        sendDroppable: (d: string) => socket.readyState === 1 && socket.bufferedAmount < 64 * 1024 && socket.send(d),
         meters: false,
         local: isLocalAddress(address),
         address,
@@ -129,12 +148,21 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       client.send(JSON.stringify({ type: 'state', state: app.state } satisfies ServerToClient));
       client.send(JSON.stringify({ type: 'time', time: app.time, playing: app.playing } satisfies ServerToClient));
       socket.on('message', (raw: Buffer) => {
+        try {
+          handleMessage(raw);
+        } catch (err) {
+          // One malformed message must never take the server down.
+          console.error('[ws] message failed', err);
+        }
+      });
+      const handleMessage = (raw: Buffer) => {
         let msg: ClientToServer;
         try {
           msg = JSON.parse(raw.toString());
         } catch {
           return;
         }
+        if (!msg || typeof msg !== 'object') return;
         switch (msg.type) {
           case 'hello':
             client.token = typeof msg.token === 'string' ? msg.token : undefined;
@@ -185,7 +213,8 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
             break;
           }
         }
-      });
+      };
+      socket.on('error', (err: Error) => console.warn('[ws] socket error', err.message));
       socket.on('close', () => {
         clients.delete(client);
         if (client.meters) app.setMetersWanted(-1);
@@ -210,7 +239,8 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     if (!folder) return reply.code(404).send();
     const base = path.resolve(folder, 'Lyrics');
     const file = path.resolve(base, (req.params as { '*': string })['*']);
-    if (!file.startsWith(base) || !fs.existsSync(file)) return reply.code(404).send();
+    // `base + sep` so a sibling folder like "Lyrics2" can't be reached.
+    if (!file.startsWith(base + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return reply.code(404).send();
     return reply.send(fs.createReadStream(file));
   });
 
@@ -267,7 +297,8 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   if (options.mdns !== false) {
     try {
       bonjour = new Bonjour();
-      bonjour.publish({ name: 'Setlist', type: 'http', port, txt: { path: '/' } });
+      // Unique per computer: two Setlist hosts on one network would otherwise clash and stop advertising.
+      bonjour.publish({ name: `Setlist (${os.hostname()})`, type: 'http', port, txt: { path: '/' } });
     } catch (err) {
       console.warn('[mdns] failed', err);
     }
@@ -278,6 +309,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     port,
     urls,
     async close() {
+      app.flush();
       midi.stop();
       oscService.stop();
       pluginHub?.stop();

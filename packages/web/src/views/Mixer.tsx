@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { groupDisplayName, parseTrackName, type LiveTrack } from '@setlist/core';
-import { act, useAccess, useMeters, useStore } from '../store.ts';
+import { act, actThrottled, useAccess, useMeters, useStore } from '../store.ts';
 
 interface Group {
   id: string;
@@ -19,24 +19,53 @@ function volumeLabel(v: number): string {
   return `${db > 0.05 ? '+' : db < -0.05 ? '−' : ''}${Math.abs(db).toFixed(1)} dB`;
 }
 
+/** Vertical fader: follows the finger locally, sends at most ~30 updates a second. */
+function Fader({ id, name, volume, disabled }: { id: string; name: string; volume: number; disabled: boolean }) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const value = drag ?? volume;
+  const release = () => setTimeout(() => setDrag(null), 150);
+  return (
+    <input
+      type="range"
+      min={0}
+      max={1}
+      step={0.005}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => {
+        const v = Number(e.target.value);
+        setDrag(v);
+        actThrottled(`volume:${id}`, 33, 'mixerGroup', id, 'volume', v);
+      }}
+      onPointerUp={release}
+      onKeyUp={release}
+      onBlur={() => setDrag(null)}
+      onDoubleClick={() => act('mixerGroup', id, 'volume', 0.85)}
+      aria-label={`${name} volume`}
+      aria-valuetext={volumeLabel(value)}
+      className="w-10 cursor-pointer accent-[var(--accent)] [direction:rtl] [writing-mode:vertical-lr]"
+    />
+  );
+}
+
 export function Mixer() {
   const state = useStore((s) => s.state)!;
   const meters = useMeters();
   const canMix = useAccess().can('mixer') && !state.locked;
   const groups = useMemo(() => {
     const map = new Map<string, Group>();
-    for (const t of state.live.tracks) {
+    for (const t of state.tracks) {
       for (const g of parseTrackName(t.name).groups) {
         if (!map.has(g)) map.set(g, { id: g, name: groupDisplayName(g), tracks: [] });
         map.get(g)!.tracks.push(t);
       }
     }
     return [...map.values()];
-  }, [state.live.tracks]);
+  }, [state.tracks]);
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-[1180px] flex-col gap-10 px-6 pt-16 pb-44">
+      <div className="mx-auto flex max-w-[1180px] flex-col gap-10 px-6 pt-16 pb-12">
         <section className="flex flex-col items-center gap-2 text-center">
           <h1 className="headline m-0 text-[clamp(48px,7vw,80px)]">Mixer.</h1>
           <p className="m-0 text-[21px] text-muted">{canMix ? 'Track groups from Live. Double-click a fader to reset it to 0 dB.' : 'Track groups from Live.'}</p>
@@ -68,19 +97,7 @@ export function Mixer() {
                         style={{ height: `${Math.min(1, level) * 100}%` }}
                       />
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.005}
-                      value={volume}
-                      disabled={!canMix}
-                      onChange={(e) => act('mixerGroup', g.id, 'volume', Number(e.target.value))}
-                      onDoubleClick={() => act('mixerGroup', g.id, 'volume', 0.85)}
-                      aria-label={`${g.name} volume`}
-                      aria-valuetext={volumeLabel(volume)}
-                      className="w-10 cursor-pointer accent-[var(--accent)] [direction:rtl] [writing-mode:vertical-lr]"
-                    />
+                    <Fader id={g.id} name={g.name} volume={volume} disabled={!canMix} />
                   </div>
                   <span className="text-[13px] text-muted tabular">{volumeLabel(volume)}</span>
                   <div className="flex gap-2">

@@ -75,8 +75,10 @@ export const ACTION_CAPABILITY: Record<string, Capability> = {
   enableLoop: 'navigate',
 
   setSetlist: 'editSetlist',
+  createSetlist: 'editSetlist',
+  selectSetlist: 'editSetlist',
   renameSetlist: 'editSetlist',
-  saveSetlist: 'editSetlist',
+  duplicateSetlist: 'editSetlist',
   loadSetlist: 'editSetlist',
   deleteSetlist: 'editSetlist',
   importSetlistText: 'editSetlist',

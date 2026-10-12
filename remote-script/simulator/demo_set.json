@@ -19,7 +19,7 @@
     [144, "> Tag +END"],
     [152, "STOP"],
     [160, ". Encore [rose] #encore"],
-    [160, "> Build"],
+    [160, "> Build {Everyone: half volume}"],
     [208, "SONG END"],
     [216, "* scratch area"]
   ],
@@ -65,6 +65,38 @@
         ["[Am]Slow [F]burn [C] [G]", 88, 104],
         ["[F]Carry [G]me [Am]home", 104, 120],
         ["[E]Build [A] [B]", 160, 176]
+      ]
+    },
+    {
+      "name": "Drums +NOTES",
+      "color": 3381759,
+      "clips": [
+        ["Hi-hat only", 0, 16],
+        ["**Kick** only", 16, 24],
+        ["Full beat", 24, 48],
+        ["Toms, half-time", 48, 56],
+        ["Fade out", 56, 64],
+        ["Brushes", 88, 104],
+        ["Full beat", 104, 120],
+        ["Big fills", 128, 144],
+        ["Four on the floor", 176, 208]
+      ]
+    },
+    {
+      "name": "Keys +NOTES",
+      "color": 10053324,
+      "clips": [
+        ["Pad", 0, 32],
+        ["Piano chords", 32, 64],
+        ["Piano only", 88, 104]
+      ]
+    },
+    {
+      "name": "Band +NOTES:ALL",
+      "color": 16737945,
+      "clips": [
+        ["Watch MD: vamp until cue", 48, 56],
+        ["STOP – only piano", 136, 144]
       ]
     },
     { "name": "Click +G:CLICK", "color": 16711680 },

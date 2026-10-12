@@ -7,3 +7,4 @@ export * from './protocol.ts';
 export * from './view.ts';
 export * from './lyrics.ts';
 export * from './access.ts';
+export * from './notes.ts';

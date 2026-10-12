@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
+import { applyMixerUpdate, can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
 
 interface Store {
   connected: boolean;
@@ -57,6 +57,28 @@ export function act(action: string, ...args: unknown[]) {
   send({ type: 'action', action, args });
 }
 
+const throttles = new Map<string, { last: number; timer?: ReturnType<typeof setTimeout>; args: unknown[] }>();
+
+/**
+ * Like act(), but at most every `ms` per key, always delivering the latest value (faders, sliders).
+ */
+export function actThrottled(key: string, ms: number, action: string, ...args: unknown[]) {
+  const t = throttles.get(key) ?? { last: 0, args };
+  t.args = args;
+  throttles.set(key, t);
+  const wait = t.last + ms - Date.now();
+  if (wait <= 0) {
+    t.last = Date.now();
+    act(action, ...args);
+  } else if (!t.timer) {
+    t.timer = setTimeout(() => {
+      t.timer = undefined;
+      t.last = Date.now();
+      act(action, ...t.args);
+    }, wait);
+  }
+}
+
 export function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${proto}://${location.host}/ws`);
@@ -83,6 +105,9 @@ export function connect() {
         break;
       case 'meters':
         useStore.setState({ meters: new Map(msg.levels.map(([id, l, r]) => [id, [l, r]])) });
+        break;
+      case 'mixer':
+        useStore.setState((s) => (s.state ? { state: { ...s.state, tracks: applyMixerUpdate(s.state.tracks, msg.tracks) } } : {}));
         break;
       case 'session':
         if (msg.session.token !== undefined) writeToken(msg.session.token || undefined);

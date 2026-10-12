@@ -67,7 +67,7 @@ function NotificationOverlay() {
     return (
       <button
         type="button"
-        className="no-print glass fixed bottom-32 left-1/2 z-40 -translate-x-1/2 rounded-full bg-glass2 px-6 py-3 text-[15px] shadow-[0_8px_32px_rgba(0,0,0,0.15)]"
+        className="no-print glass fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-glass2 px-6 py-3 text-[15px] shadow-[0_8px_32px_rgba(0,0,0,0.15)]"
         onClick={() => setDismissed(n.id)}
       >
         {n.text}
@@ -161,12 +161,14 @@ export function App() {
           </a>
         </div>
       )}
-      <main className="relative min-h-0 flex-1">
-        {Component ? (
-          <Component />
-        ) : (
-          <div className="flex h-full items-center justify-center px-6 text-center text-[17px] text-muted">The owner hasn’t shared any pages with viewers yet.</div>
-        )}
+      <main className="flex min-h-0 flex-1 flex-col">
+        <div className="relative min-h-0 flex-1">
+          {Component ? (
+            <Component />
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center text-[17px] text-muted">The owner hasn’t shared any pages with viewers yet.</div>
+          )}
+        </div>
         <Transport />
       </main>
       <NotificationOverlay />

@@ -1,8 +1,8 @@
 import type { Role } from './access.ts';
 import type { PlaybackPlan } from './plan.ts';
-import type { Setlist } from './setlist.ts';
+import type { Setlist, SetlistSummary } from './setlist.ts';
 import type { Song } from './songs.ts';
-import type { Beats, LiveSnapshot, Settings } from './types.ts';
+import type { Beats, LiveSnapshot, MixerUpdate, Settings } from './types.ts';
 
 // ---------------------------------------------------------------------------
 // Remote Script <-> server (UDP, one JSON object per datagram)
@@ -18,7 +18,9 @@ export type ScriptToServer =
   | { type: 'meters'; levels: [id: string, left: number, right: number][] }
   | { type: 'fired'; event: 'stop' | 'jump' | 'loopEnd' | 'queued'; at: Beats }
   | { type: 'pong' }
-  | { type: 'log'; level: 'info' | 'error'; message: string };
+  | { type: 'log'; level: 'info' | 'error'; message: string }
+  /** Mute / solo / volume changes only (cheap; no clips, no song rebuild). */
+  | { type: 'mixer'; tracks: MixerUpdate };
 
 export type ScriptCommand =
   | { name: 'play' }
@@ -90,11 +92,16 @@ export interface Notification {
 export interface AppState {
   liveConnected: boolean;
   scriptVersion: string | null;
-  live: Omit<LiveSnapshot, 'time' | 'isPlaying'>;
+  /** Transport state. Tracks and cues are separate keys so transport changes stay small. */
+  live: Omit<LiveSnapshot, 'time' | 'isPlaying' | 'tracks' | 'cues'>;
+  tracks: LiveSnapshot['tracks'];
+  cues: LiveSnapshot['cues'];
   /** Songs in arrangement order. */
   songs: Song[];
+  /** The active setlist (reconciled with the current songs). */
   setlist: Setlist;
-  savedSetlists: string[];
+  /** All setlists of this project. */
+  setlists: SetlistSummary[];
   queued: QueuedJump | null;
   settings: Settings;
   /** Device-wide lock: disables controls on all clients. */
@@ -130,7 +137,9 @@ export type ServerToClient =
   | { type: 'patch'; state: Partial<AppState> }
   | { type: 'time'; time: Beats; playing: boolean }
   | { type: 'meters'; levels: [string, number, number][] }
-  | { type: 'session'; session: Session };
+  | { type: 'session'; session: Session }
+  /** Mixer-only changes, applied to `tracks`. */
+  | { type: 'mixer'; tracks: MixerUpdate };
 
 export type ClientToServer =
   | { type: 'hello'; token?: string }

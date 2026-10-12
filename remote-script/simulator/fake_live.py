@@ -56,7 +56,7 @@ class Mixer(object):
 
 
 class Clip(Observable):
-    OBSERVED = ("name", "start_time")
+    OBSERVED = ("name", "start_time", "end_time", "color")
 
     def __init__(self, name, start, end, color=0x888888):
         Observable.__init__(self)
