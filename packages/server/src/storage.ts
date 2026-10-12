@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DEFAULT_SETTINGS, type Settings, type Setlist } from '@setlist/core';
+import { DEFAULT_SETTINGS, normalizeViewerPermissions, type Settings, type Setlist } from '@setlist/core';
 
 export function defaultDataDir(): string {
   if (process.env.SETLIST_DATA_DIR) return process.env.SETLIST_DATA_DIR;
@@ -30,6 +30,13 @@ function safeName(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'Untitled';
 }
 
+export interface AuthData {
+  /** scrypt hash of the owner PIN; null = no PIN, every device is owner. */
+  pin: { salt: string; hash: string } | null;
+  /** Hashes of tokens handed to devices that entered the PIN. */
+  tokens: string[];
+}
+
 interface ProjectMeta {
   songIds: string[];
   current: Setlist | null;
@@ -47,7 +54,17 @@ export class Storage {
   }
 
   loadSettings(): Settings {
-    return { ...DEFAULT_SETTINGS, ...readJson<Partial<Settings>>(path.join(this.dataDir, 'settings.json'), {}) };
+    const saved = readJson<Partial<Settings>>(path.join(this.dataDir, 'settings.json'), {});
+    return { ...DEFAULT_SETTINGS, ...saved, viewer: normalizeViewerPermissions(saved.viewer) };
+  }
+
+  /** Owner PIN hash and remembered owner devices. Kept out of settings, which every client receives. */
+  loadAuth(): AuthData {
+    return { pin: null, tokens: [], ...readJson<Partial<AuthData>>(path.join(this.dataDir, 'auth.json'), {}) };
+  }
+
+  saveAuth(auth: AuthData) {
+    writeJson(path.join(this.dataDir, 'auth.json'), auth);
   }
 
   saveSettings(settings: Settings) {

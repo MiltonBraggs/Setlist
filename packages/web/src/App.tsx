@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { act, useStore } from './store.ts';
+import { canDispatch } from '@setlist/core';
+import { act, useAccess, useStore } from './store.ts';
+import { RoleBadge } from './components/Access.tsx';
 import { Transport } from './components/Transport.tsx';
 import { Performance } from './views/Performance.tsx';
 import { SetlistView } from './views/Setlist.tsx';
@@ -28,29 +30,29 @@ function useShortcuts() {
       const t = e.target as HTMLElement;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map: Record<string, () => void> = {
-        ' ': () => act('playPause'),
-        'shift+ ': () => act('play'),
-        'shift+R': () => act('toggleRecord'),
-        ArrowLeft: () => act('prevSong'),
-        ArrowRight: () => act('nextSong'),
-        ArrowUp: () => act('prevSection'),
-        ArrowDown: () => act('nextSection'),
-        'shift+ArrowLeft': () => act('jumpByMeasures', -1),
-        'shift+ArrowRight': () => act('jumpByMeasures', 1),
-        l: () => act('toggleLoop'),
-        'shift+L': () => act('toggleLock'),
-        j: () => act('jumpQueued'),
-        'shift+J': () => act('jumpQueuedNow'),
-        c: () => act('cancelQueue'),
-        g: () => act('go'),
+      const map: Record<string, [string, ...unknown[]]> = {
+        ' ': ['playPause'],
+        'shift+ ': ['play'],
+        'shift+R': ['toggleRecord'],
+        ArrowLeft: ['prevSong'],
+        ArrowRight: ['nextSong'],
+        ArrowUp: ['prevSection'],
+        ArrowDown: ['nextSection'],
+        'shift+ArrowLeft': ['jumpByMeasures', -1],
+        'shift+ArrowRight': ['jumpByMeasures', 1],
+        l: ['toggleLoop'],
+        'shift+L': ['toggleLock'],
+        j: ['jumpQueued'],
+        'shift+J': ['jumpQueuedNow'],
+        c: ['cancelQueue'],
+        g: ['go'],
       };
       const key = `${e.shiftKey && e.key !== 'Shift' ? 'shift+' : ''}${e.key}`;
-      const fn = map[key];
-      if (fn) {
-        e.preventDefault();
-        fn();
-      }
+      const entry = map[key];
+      const { role, state } = useStore.getState();
+      if (!entry || !state || !canDispatch(role ?? 'viewer', state.settings.viewer, entry[0])) return;
+      e.preventDefault();
+      act(entry[0], ...entry.slice(1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -97,6 +99,8 @@ function Status({ connected, live }: { connected: boolean; live: boolean }) {
 export function App() {
   const connected = useStore((s) => s.connected);
   const state = useStore((s) => s.state);
+  const role = useStore((s) => s.role);
+  const access = useAccess();
   const [view, setView] = useState<ViewId>(viewFromHash);
   useShortcuts();
 
@@ -112,11 +116,14 @@ export function App() {
     document.documentElement.style.setProperty('--font-scale', String(state.settings.fontScale));
   }, [state?.settings.theme, state?.settings.fontScale]);
 
-  if (!state) {
+  if (!state || !role) {
     return <div className="flex h-full items-center justify-center text-muted">{connected ? 'Loading…' : 'Connecting to Setlist…'}</div>;
   }
 
-  const { Component } = VIEWS[view];
+  const visible = (Object.keys(VIEWS) as ViewId[]).filter((id) => access.canSee(id));
+  // A viewer who opens a page they can't see lands on the first one they can.
+  const current: ViewId | undefined = visible.includes(view) ? view : visible[0];
+  const Component = current ? VIEWS[current].Component : null;
   return (
     <div className="flex h-full flex-col">
       <header className="no-print glass z-20 border-b border-line bg-glass">
@@ -125,17 +132,18 @@ export function App() {
             Setlist
           </a>
           <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] sm:justify-center">
-            {(Object.keys(VIEWS) as ViewId[]).map((id) => (
+            {visible.map((id) => (
               <a
                 key={id}
                 href={`#/${id}`}
-                aria-current={view === id ? 'page' : undefined}
-                className={`inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-[13px] no-underline transition sm:px-4 ${view === id ? 'bg-fg/[0.07] text-fg' : 'text-muted hover:text-fg'}`}
+                aria-current={current === id ? 'page' : undefined}
+                className={`inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-[13px] no-underline transition sm:px-4 ${current === id ? 'bg-fg/[0.07] text-fg' : 'text-muted hover:text-fg'}`}
               >
                 {VIEWS[id].label}
               </a>
             ))}
           </div>
+          <RoleBadge />
           {state.locked && <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-black">Locked</span>}
           <Status connected={connected} live={state.liveConnected} />
         </nav>
@@ -145,7 +153,7 @@ export function App() {
           Waiting for Ableton Live. Choose <b className="text-fg">Setlist</b> as a Control Surface in Live’s preferences.
         </div>
       )}
-      {state.errors.length > 0 && view !== 'settings' && (
+      {access.isOwner && state.errors.length > 0 && current !== 'settings' && (
         <div className="no-print bg-panel px-4 py-2 text-center text-sm">
           The Remote Script reported an error.{' '}
           <a href="#/settings" className="text-link">
@@ -154,7 +162,11 @@ export function App() {
         </div>
       )}
       <main className="relative min-h-0 flex-1">
-        <Component />
+        {Component ? (
+          <Component />
+        ) : (
+          <div className="flex h-full items-center justify-center px-6 text-center text-[17px] text-muted">The owner hasn’t shared any pages with viewers yet.</div>
+        )}
         <Transport />
       </main>
       <NotificationOverlay />

@@ -3,7 +3,7 @@ import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSe
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDuration, playView, searchSongs, setlistToText, type SetlistEntry, type Song } from '@setlist/core';
-import { act, usePlayhead, usePref, useStore } from '../store.ts';
+import { act, useAccess, usePlayhead, usePref, useStore } from '../store.ts';
 import { Button, Dialog, Eyebrow, Icon, IconButton, TextInput, colorOf } from '../components/ui.tsx';
 
 type DialogKind = null | 'add' | 'save' | 'load' | 'import' | { details: string };
@@ -14,6 +14,9 @@ export function SetlistView() {
   const [editing, setEditing] = useState(false);
   const [hideRemoved, setHideRemoved] = usePref('hideRemoved', false);
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const access = useAccess();
+  const canEdit = access.can('editSetlist');
+  const canJump = access.can('navigate');
   const songs = useMemo(() => new Map(state.songs.map((s) => [s.id, s])), [state.songs]);
   const v = playView(state.songs, state.setlist, time, state.live.tempo, state.queued);
   const entries = state.setlist.entries;
@@ -26,6 +29,7 @@ export function SetlistView() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || dialog) return;
       const mod = e.metaKey || e.ctrlKey;
+      if (!canEdit && !(mod && e.key.toLowerCase() === 'p')) return;
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setEditing(true);
@@ -97,12 +101,16 @@ export function SetlistView() {
                 <Button variant="outline" onClick={() => window.print()} title="Print (Ctrl+P)">
                   Print
                 </Button>
-                <Button variant="outline" onClick={() => setDialog('load')} title="Load setlist (⇧O)">
-                  Load
-                </Button>
-                <Button variant="primary" onClick={() => setEditing(true)} disabled={state.locked}>
-                  Edit
-                </Button>
+                {canEdit && (
+                  <>
+                    <Button variant="outline" onClick={() => setDialog('load')} title="Load setlist (⇧O)">
+                      Load
+                    </Button>
+                    <Button variant="primary" onClick={() => setEditing(true)} disabled={state.locked}>
+                      Edit
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -127,7 +135,8 @@ export function SetlistView() {
                     upNext={nextId === song.id || state.queued?.songId === song.id}
                     progress={v.song?.id === song.id ? v.loc.songProgress : 0}
                     currentSectionId={v.song?.id === song.id ? v.section?.id : undefined}
-                    locked={state.locked}
+                    locked={state.locked || !canJump}
+                    canEdit={canEdit}
                     onToggleRemoved={() => update(entries.map((e) => (e.songId === song.id ? { ...e, removed: !e.removed } : e)))}
                     onDetails={() => setDialog({ details: song.id })}
                   />
@@ -137,7 +146,7 @@ export function SetlistView() {
           </SortableContext>
         </DndContext>
         {state.songs.length === 0 && <p className="m-0 text-center text-muted">No songs yet. Add locators to your Arrangement in Live.</p>}
-        <p className="m-0 text-center text-sm text-muted">{editing ? 'Drag to reorder. Removed songs stay in the list, dimmed.' : 'Tap a song to queue it. Right-click for details.'}</p>
+        <p className="m-0 text-center text-sm text-muted">{editing ? 'Drag to reorder. Removed songs stay in the list, dimmed.' : canJump ? 'Tap a song to queue it.' : ''}</p>
       </div>
 
       <PrintView />
@@ -174,6 +183,7 @@ function SongRow(props: {
   progress: number;
   currentSectionId?: string;
   locked: boolean;
+  canEdit: boolean;
   onToggleRemoved: () => void;
   onDetails: () => void;
 }) {
@@ -199,6 +209,7 @@ function SongRow(props: {
           disabled={editing || props.locked}
           onClick={() => act('jumpToSong', song.id)}
           onContextMenu={(e) => {
+            if (!props.canEdit) return;
             e.preventDefault();
             props.onDetails();
           }}

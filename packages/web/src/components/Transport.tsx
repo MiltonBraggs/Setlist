@@ -1,12 +1,17 @@
-import { act, useStore } from '../store.ts';
+import { act, useAccess, useStore } from '../store.ts';
 import { Icon, IconButton } from './ui.tsx';
 
 /** Floating transport pill shared by all views. */
 export function Transport() {
   const playing = useStore((s) => s.playing);
   const state = useStore((s) => s.state);
+  const access = useAccess();
   if (!state) return null;
   const locked = state.locked;
+  const transport = access.can('transport');
+  const navigate = access.can('navigate');
+  // Viewers without any control rights get no transport bar at all.
+  if (!transport && !navigate) return null;
   return (
     <div className="no-print pointer-events-none absolute inset-x-0 bottom-0 flex justify-center px-4 pb-6">
       <div
@@ -14,8 +19,9 @@ export function Transport() {
         aria-label="Transport"
         className="glass pointer-events-auto flex w-full max-w-[420px] flex-wrap items-center justify-between gap-1.5 rounded-[28px] bg-glass2 p-3 shadow-[0_8px_32px_rgba(0,0,0,0.12)] sm:w-auto sm:max-w-none sm:flex-nowrap sm:justify-center sm:rounded-[32px] sm:px-3.5 sm:py-2.5"
       >
-        <IconButton icon="prev" label="Previous song (←)" disabled={locked} onClick={() => act('prevSong')} />
-        <IconButton icon="up" label="Previous section (↑)" disabled={locked} onClick={() => act('prevSection')} />
+        {navigate && <IconButton icon="prev" label="Previous song (←)" disabled={locked} onClick={() => act('prevSong')} />}
+        {navigate && <IconButton icon="up" label="Previous section (↑)" disabled={locked} onClick={() => act('prevSection')} />}
+        {transport && (
         <button
           type="button"
           aria-label={playing ? 'Pause (Space)' : 'Play (Space)'}
@@ -26,10 +32,14 @@ export function Transport() {
         >
           <Icon name={playing ? 'pause' : 'play'} className="h-7 w-7" />
         </button>
-        <IconButton icon="stop" label="Stop" disabled={locked} onClick={() => act('stop')} className="!hidden sm:!grid" />
-        <IconButton icon="down" label="Next section (↓)" disabled={locked} onClick={() => act('nextSection')} />
-        <IconButton icon="next" label="Next song / escape loop (→)" disabled={locked} onClick={() => act('nextSong')} />
-        <IconButton icon="loop" label="Loop section (L)" active={state.live.loop.on} disabled={locked} onClick={() => act('toggleLoop')} className="!hidden sm:!grid" />
+        )}
+        {transport && <IconButton icon="stop" label="Stop" disabled={locked} onClick={() => act('stop')} className="!hidden sm:!grid" />}
+        {navigate && <IconButton icon="down" label="Next section (↓)" disabled={locked} onClick={() => act('nextSection')} />}
+        {navigate && <IconButton icon="next" label="Next song / escape loop (→)" disabled={locked} onClick={() => act('nextSong')} />}
+        {navigate && (
+          <IconButton icon="loop" label="Loop section (L)" active={state.live.loop.on} disabled={locked} onClick={() => act('toggleLoop')} className="!hidden sm:!grid" />
+        )}
+        {transport && (
         <button
           type="button"
           title="GO (G)"
@@ -39,7 +49,9 @@ export function Transport() {
         >
           GO
         </button>
-        <span className="mx-1 hidden h-8 w-px bg-line sm:block" aria-hidden />
+        )}
+        {access.isOwner && <span className="mx-1 hidden h-8 w-px bg-line sm:block" aria-hidden />}
+        {transport && (
         <IconButton
           icon="record"
           label="Record (⇧R)"
@@ -48,7 +60,10 @@ export function Transport() {
           onClick={() => act('toggleRecord')}
           className={`!hidden sm:!grid ${state.live.recordMode ? '!text-danger' : 'text-muted'}`}
         />
-        <IconButton icon={locked ? 'lock' : 'unlock'} label="Lock controls (⇧L)" active={locked} onClick={() => act('toggleLock')} className={`!hidden sm:!grid ${locked ? '' : 'text-muted'}`} />
+        )}
+        {access.isOwner && (
+          <IconButton icon={locked ? 'lock' : 'unlock'} label="Lock controls (⇧L)" active={locked} onClick={() => act('toggleLock')} className={`!hidden sm:!grid ${locked ? '' : 'text-muted'}`} />
+        )}
       </div>
     </div>
   );

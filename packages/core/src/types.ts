@@ -1,3 +1,5 @@
+import { DEFAULT_VIEWER_PERMISSIONS, type ViewerPermissions } from './access.ts';
+
 /** All arrangement times are in beats (quarter notes), as reported by Live. */
 export type Beats = number;
 
@@ -67,6 +69,8 @@ export interface Settings {
   /** Optional folder for setlists and lyrics images (Live doesn't expose the .als path). */
   projectFolder: string | null;
   midiMappings: MidiMapping[];
+  /** What viewer devices (bandmates) can see and do. */
+  viewer: ViewerPermissions;
 }
 
 export type MidiMessageKind = 'note' | 'cc' | 'pc';
@@ -94,4 +98,5 @@ export const DEFAULT_SETTINGS: Settings = {
   oscPort: 39051,
   projectFolder: null,
   midiMappings: [],
+  viewer: DEFAULT_VIEWER_PERMISSIONS,
 };

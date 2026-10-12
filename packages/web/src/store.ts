@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import type { AppState, ClientToServer, ServerToClient } from '@setlist/core';
+import { can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
 
 interface Store {
   connected: boolean;
@@ -10,6 +10,10 @@ interface Store {
   playing: boolean;
   receivedAt: number;
   meters: Map<string, [number, number]>;
+  /** null until the server has answered this device's hello. */
+  role: Role | null;
+  /** Last sign-in / PIN error, shown in the dialog. */
+  authError: string | null;
 }
 
 export const useStore = create<Store>(() => ({
@@ -19,7 +23,28 @@ export const useStore = create<Store>(() => ({
   playing: false,
   receivedAt: performance.now(),
   meters: new Map(),
+  role: null,
+  authError: null,
 }));
+
+const TOKEN_KEY = 'setlist:ownerToken';
+
+function readToken(): string | undefined {
+  try {
+    return localStorage.getItem(TOKEN_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeToken(token: string | undefined) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* private mode: owner status lasts until reload */
+  }
+}
 
 let socket: WebSocket | null = null;
 let metersWanted = 0;
@@ -37,6 +62,7 @@ export function connect() {
   socket = new WebSocket(`${proto}://${location.host}/ws`);
   socket.onopen = () => {
     useStore.setState({ connected: true });
+    send({ type: 'hello', token: readToken() });
     if (metersWanted > 0) send({ type: 'meters', enabled: true });
   };
   socket.onclose = () => {
@@ -58,7 +84,43 @@ export function connect() {
       case 'meters':
         useStore.setState({ meters: new Map(msg.levels.map(([id, l, r]) => [id, [l, r]])) });
         break;
+      case 'session':
+        if (msg.session.token !== undefined) writeToken(msg.session.token || undefined);
+        useStore.setState({ role: msg.session.role, authError: msg.session.error ?? null });
+        break;
     }
+  };
+}
+
+export function signIn(pin: string) {
+  useStore.setState({ authError: null });
+  send({ type: 'signIn', pin });
+}
+
+export function signOut() {
+  writeToken(undefined);
+  send({ type: 'signOut' });
+}
+
+/** Owner only: set or change (string) or remove (null) the owner PIN. */
+export function setOwnerPin(pin: string | null) {
+  useStore.setState({ authError: null });
+  send({ type: 'setPin', pin });
+}
+
+/** This device's role and what it may do. */
+export function useAccess() {
+  const role = useStore((s) => s.role) ?? 'viewer';
+  const perms = useStore((s) => s.state?.settings.viewer);
+  const pinSet = useStore((s) => s.state?.access.pinSet ?? false);
+  const p = perms!;
+  return {
+    role,
+    isOwner: role === 'owner',
+    pinSet,
+    can: (capability: Capability) => !!perms && can(role, p, capability),
+    canSee: (page: PageId) => !!perms && canSeePage(role, p, page),
+    canSeeLyrics: (title: string) => !!perms && canSeeLyricsTrack(role, p, title),
   };
 }
 

@@ -24,7 +24,14 @@
     [216, "* scratch area"]
   ],
   "tracks": [
-    { "name": "Sections", "color": 7895160, "clips": [["Drop", 176, 180], ["Breakdown [orange]", 192, 196]] },
+    {
+      "name": "Sections",
+      "color": 7895160,
+      "clips": [
+        ["Drop", 176, 180],
+        ["Breakdown [orange]", 192, 196]
+      ]
+    },
     {
       "name": "Vocals +LYRICS",
       "color": 16753920,
@@ -45,6 +52,19 @@
         ["Last time, now", 128, 144],
         ["[blue] Hands up!", 176, 192],
         ["[blue] Break it down", 192, 208]
+      ]
+    },
+    {
+      "name": "Chords +LYRICS [onlychords]",
+      "color": 3381759,
+      "clips": [
+        ["[C]Intro [G] [Am] [F]", 0, 16],
+        ["[C]Verse [G] [Am] [F]", 16, 32],
+        ["[C]Neon [G]lights [Am] [F]", 32, 44],
+        ["[F] [G]Vamp", 48, 56],
+        ["[Am]Slow [F]burn [C] [G]", 88, 104],
+        ["[F]Carry [G]me [Am]home", 104, 120],
+        ["[E]Build [A] [B]", 160, 176]
       ]
     },
     { "name": "Click +G:CLICK", "color": 16711680 },

@@ -13,10 +13,7 @@ Ableton Live 12 ── Remote Script "Setlist" (Python, runs inside Live)
        │ UDP 39100/39101 (localhost, JSON)
 Setlist server (Node) ── state, setlists, MIDI in, OSC :39051, HTTP + WebSocket
        │
-Browsers on the LAN (React UI)
-
-Optional: "Setlist Sync" VST3/AU on Master ── UDP 39102 ── server
-             sample-accurate playhead + exact silence at STOP / +PAUSE
+Browsers on the LAN (React UI) ── owner devices and viewer devices
 ```
 
 The server sends the Remote Script a *plan* (stop and jump events, plus `+LOOP` regions), and the script executes it
@@ -30,8 +27,8 @@ whatever the network latency.
 | `packages/core/` | Locator notation parser, song builder, playback plan, setlists, lyrics (shared TS) |
 | `packages/server/` | Live bridge, app state and actions, storage, MIDI, OSC, HTTP/WebSocket |
 | `packages/web/` | React UI: Performance, Setlist, Lyrics, Mixer, Settings |
-| `apps/desktop/` | Electron tray app, Remote Script installer, packaging |
-| `plugin/` | Optional "Setlist Sync" VST3/AU (JUCE 8) for exact stops. See [plugin/README.md](plugin/README.md) |
+| `apps/desktop/` | *On hold.* Electron tray app (not built or installed) |
+| `plugin/` | *On hold.* "Setlist Sync" VST3/AU for exact stops, see [plugin/README.md](plugin/README.md). The server only talks to it with `SETLIST_PLUGINS=1` |
 
 ## Getting started
 
@@ -43,7 +40,6 @@ npm run build -w @setlist/web
 **1. Install the Remote Script.** Copy `remote-script/Setlist` to
 `Documents\Ableton\User Library\Remote Scripts\Setlist` (macOS: `~/Music/Ableton/User Library/Remote Scripts/Setlist`).
 Restart Live, then choose **Setlist** as a Control Surface under *Preferences → Link, Tempo & MIDI*, with Input and Output set to None.
-The desktop app's tray menu can also do this for you.
 
 **2. Run the server.**
 
@@ -62,16 +58,28 @@ npm test          # TS unit tests + Python engine tests
 npm run typecheck
 ```
 
-`SIM_SPEED=3 npm run sim` runs the simulator faster, and `npm run sim -- --plugin` also simulates the Setlist Sync plugin. Edit `remote-script/simulator/demo_set.json` to try other sets.
+`SIM_SPEED=3 npm run sim` runs the simulator faster. Edit `remote-script/simulator/demo_set.json` to try other sets.
 
-### Desktop app
+## Owner and viewers
 
-```bash
-npm approve-scripts electron   # this npm version blocks Electron's binary download by default
-npm install
-npm start -w @setlist/desktop  # tray app
-npm run build                  # Windows installer in apps/desktop/release
-```
+Setlist has two roles:
+
+- **Owner:** full control, including Settings. The computer running Setlist is always owner.
+- **Viewer:** bandmates' phones and tablets. They get whatever the owner allows.
+
+Until you set an **owner PIN** (*Settings → Owner and bandmates*), every device is owner. Once a PIN is set:
+
+- Any other device opens as a viewer. Tapping *Viewer · Sign in* and entering the PIN makes it an owner, and it stays owner after reloads.
+- Changing or removing the PIN signs out every other owner device.
+- Wrong PINs are rate-limited, and the PIN is stored only as a hash.
+
+The owner decides, for all viewers at once:
+
+- **Pages:** Performance, Setlist, Lyrics and Mixer. Settings is always owner-only.
+- **Lyrics tracks:** which `+LYRICS` tracks viewers can open.
+- **Controls:** play, stop and GO; jumping to songs and sections; editing the setlist; the mixer.
+
+Permissions are enforced by the server, not just hidden in the UI.
 
 ## Locator notation
 
@@ -113,6 +121,10 @@ A MIDI track flagged `+LYRICS`, with one clip per line, named with the text:
 - **Chords:** ChordPro style, e.g. `[C]Neon [G]lights`.
 - **Images:** `[img:file.png] [full]` shows an image from `<project folder>/Lyrics/`.
 - **Track options:** `[top+2]`, `[nofade]`, `[nozoom]`, `[nosections]`, `[linemarker]`, `[progress]`, `[allsongs]`, `[+150ms]`, `[nochords]`, `[onlychords]`, `[chords:red]`, and `+CLIPCOLORS`.
+
+**Several views.** Make one `+LYRICS` track per view, for example `Vocals +LYRICS`, `Chords +LYRICS [onlychords]` and
+`Harmony +LYRICS [blue]`. Each becomes a tab on the Lyrics page. If a track has chords, a *Lyrics / Lyrics + Chords / Chords*
+toggle appears. Its starting value comes from the track's `[nochords]` / `[onlychords]`, and each device remembers its own choice.
 
 ## Control
 
@@ -156,7 +168,7 @@ which songs it contains.
 
 ## Known limitations
 
-- **STOP and +PAUSE timing.** Without the plugin, these fire on the Remote Script's ~100 ms tick, so playback can stop up to about 100 ms after the locator. Place STOP locators slightly after the song's tail. With [Setlist Sync](plugin/README.md) on Master and on any other outputs, the output goes silent on the exact sample.
+- **STOP and +PAUSE timing.** These fire on the Remote Script's ~100 ms tick, so playback can stop up to about 100 ms after the locator. Place STOP locators slightly after the song's tail.
 - **Locator grid.** Put locators on the bar or beat grid. Off-grid targets fall back to a less precise jump.
 - **Tempo changes.** Song durations assume the tempo shown in Live; tempo automation isn't accounted for.
 - **Not built yet.** Canvas builder, voice cues/TTS, AbleNet redundancy, audio interface control and multi-file projects.

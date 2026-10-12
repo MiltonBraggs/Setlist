@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { groupDisplayName, parseTrackName, type LiveTrack } from '@setlist/core';
-import { act, useMeters, useStore } from '../store.ts';
+import { act, useAccess, useMeters, useStore } from '../store.ts';
 
 interface Group {
   id: string;
@@ -22,6 +22,7 @@ function volumeLabel(v: number): string {
 export function Mixer() {
   const state = useStore((s) => s.state)!;
   const meters = useMeters();
+  const canMix = useAccess().can('mixer') && !state.locked;
   const groups = useMemo(() => {
     const map = new Map<string, Group>();
     for (const t of state.live.tracks) {
@@ -38,7 +39,7 @@ export function Mixer() {
       <div className="mx-auto flex max-w-[1180px] flex-col gap-10 px-6 pt-16 pb-44">
         <section className="flex flex-col items-center gap-2 text-center">
           <h1 className="headline m-0 text-[clamp(48px,7vw,80px)]">Mixer.</h1>
-          <p className="m-0 text-[21px] text-muted">Track groups from Live. Double-click a fader to reset it to 0 dB.</p>
+          <p className="m-0 text-[21px] text-muted">{canMix ? 'Track groups from Live. Double-click a fader to reset it to 0 dB.' : 'Track groups from Live.'}</p>
         </section>
 
         {groups.length === 0 ? (
@@ -73,7 +74,7 @@ export function Mixer() {
                       max={1}
                       step={0.005}
                       value={volume}
-                      disabled={state.locked}
+                      disabled={!canMix}
                       onChange={(e) => act('mixerGroup', g.id, 'volume', Number(e.target.value))}
                       onDoubleClick={() => act('mixerGroup', g.id, 'volume', 0.85)}
                       aria-label={`${g.name} volume`}
@@ -87,7 +88,7 @@ export function Mixer() {
                       type="button"
                       aria-label={`Mute ${g.name}`}
                       aria-pressed={muted}
-                      disabled={state.locked}
+                      disabled={!canMix}
                       onClick={() => act('mixerGroup', g.id, 'toggleMute')}
                       className={`h-11 w-11 rounded-full text-sm font-semibold transition active:scale-95 ${muted ? 'bg-[#ff9f0a] text-black' : 'bg-panel2'}`}
                     >
@@ -97,7 +98,7 @@ export function Mixer() {
                       type="button"
                       aria-label={`Solo ${g.name}`}
                       aria-pressed={solo}
-                      disabled={state.locked}
+                      disabled={!canMix}
                       onClick={() => act('mixerGroup', g.id, 'toggleSolo')}
                       className={`h-11 w-11 rounded-full text-sm font-semibold transition active:scale-95 ${solo ? 'bg-accent text-onaccent' : 'bg-panel2'}`}
                     >

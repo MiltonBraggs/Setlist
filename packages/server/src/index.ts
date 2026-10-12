@@ -5,7 +5,8 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { Bonjour } from 'bonjour-service';
 import Fastify from 'fastify';
-import { setlistToText, type ClientToServer, type ServerToClient } from '@setlist/core';
+import { canDispatch, setlistToText, type ClientToServer, type Role, type ServerToClient, type Session } from '@setlist/core';
+import { AccessControl, isLocalAddress } from './access.ts';
 import { SetlistApp } from './app.ts';
 import { LiveBridge } from './bridge.ts';
 import { MidiService } from './midi.ts';
@@ -58,7 +59,31 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const fastify = Fastify({ logger: false });
   await fastify.register(fastifyWebsocket);
 
-  const clients = new Set<{ send: (data: string) => void; meters: boolean }>();
+  const access = new AccessControl(storage);
+
+  interface Client {
+    send: (data: string) => void;
+    meters: boolean;
+    /** The host computer is always owner, so you can't lock yourself out. */
+    local: boolean;
+    address: string;
+    token?: string;
+    role: Role;
+  }
+  const clients = new Set<Client>();
+
+  const roleOf = (c: Client): Role => (c.local || !access.pinSet || access.isOwnerToken(c.token) ? 'owner' : 'viewer');
+  const sendSession = (c: Client, extra: Omit<Session, 'role'> = {}) => {
+    c.role = roleOf(c);
+    c.send(JSON.stringify({ type: 'session', session: { role: c.role, ...extra } } satisfies ServerToClient));
+  };
+  const refreshAccess = () => {
+    let owners = 0;
+    for (const c of clients) if (c.role === 'owner') owners++;
+    app.setAccess({ pinSet: access.pinSet, owners, viewers: clients.size - owners });
+  };
+  refreshAccess();
+
   const broadcast = (msg: ServerToClient) => {
     const data = JSON.stringify(msg);
     for (const c of clients) c.send(data);
@@ -88,9 +113,19 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   });
 
   fastify.register(async (instance) => {
-    instance.get('/ws', { websocket: true }, (socket) => {
-      const client = { send: (d: string) => socket.readyState === 1 && socket.send(d), meters: false };
+    instance.get('/ws', { websocket: true }, (socket, req) => {
+      const address = req.socket.remoteAddress ?? '';
+      const client: Client = {
+        send: (d: string) => socket.readyState === 1 && socket.send(d),
+        meters: false,
+        local: isLocalAddress(address),
+        address,
+        role: 'viewer',
+      };
       clients.add(client);
+      // The device's role is sent in reply to its 'hello', which carries its saved owner token.
+      client.role = roleOf(client);
+      refreshAccess();
       client.send(JSON.stringify({ type: 'state', state: app.state } satisfies ServerToClient));
       client.send(JSON.stringify({ type: 'time', time: app.time, playing: app.playing } satisfies ServerToClient));
       socket.on('message', (raw: Buffer) => {
@@ -100,15 +135,61 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
         } catch {
           return;
         }
-        if (msg.type === 'action') app.dispatch(msg.action, msg.args ?? [], 'ui');
-        else if (msg.type === 'meters' && msg.enabled !== client.meters) {
-          client.meters = msg.enabled;
-          app.setMetersWanted(msg.enabled ? 1 : -1);
+        switch (msg.type) {
+          case 'hello':
+            client.token = typeof msg.token === 'string' ? msg.token : undefined;
+            sendSession(client);
+            refreshAccess();
+            break;
+          case 'action':
+            if (typeof msg.action !== 'string') return;
+            // Enforced here, not just hidden in the UI.
+            if (!canDispatch(client.role, app.state.settings.viewer, msg.action)) return;
+            app.dispatch(msg.action, Array.isArray(msg.args) ? msg.args : [], 'ui');
+            break;
+          case 'meters':
+            if (msg.enabled !== client.meters) {
+              client.meters = !!msg.enabled;
+              app.setMetersWanted(client.meters ? 1 : -1);
+            }
+            break;
+          case 'signIn': {
+            const result = access.signIn(String(msg.pin ?? ''), address);
+            if ('token' in result) client.token = result.token;
+            sendSession(client, result);
+            refreshAccess();
+            break;
+          }
+          case 'signOut':
+            access.signOut(client.token);
+            client.token = undefined;
+            sendSession(client, { token: '' });
+            refreshAccess();
+            break;
+          case 'setPin': {
+            if (client.role !== 'owner') return;
+            const result = access.setPin(msg.pin === null ? null : String(msg.pin));
+            if ('error' in result) {
+              sendSession(client, result);
+              break;
+            }
+            // Every other remembered owner device is signed out by a PIN change.
+            for (const c of clients) {
+              if (c === client) continue;
+              c.token = undefined;
+              sendSession(c, { token: '' });
+            }
+            client.token = result.token;
+            sendSession(client, { token: result.token ?? '' });
+            refreshAccess();
+            break;
+          }
         }
       });
       socket.on('close', () => {
         clients.delete(client);
         if (client.meters) app.setMetersWanted(-1);
+        refreshAccess();
       });
     });
   });
@@ -162,12 +243,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     await fastify.close();
     throw err;
   }
-  const pluginHub = new PluginHub();
-  try {
-    await pluginHub.start();
-    app.attachPlugins(pluginHub);
-  } catch (err) {
-    console.warn(`[plugins] Setlist Sync support disabled: ${(err as Error).message}`);
+  // The "Setlist Sync" VST3 plugin is on hold; its hub only starts when explicitly enabled.
+  const pluginHub = process.env.SETLIST_PLUGINS === '1' ? new PluginHub() : null;
+  if (pluginHub) {
+    try {
+      await pluginHub.start();
+      app.attachPlugins(pluginHub);
+    } catch (err) {
+      console.warn(`[plugins] Setlist Sync support disabled: ${(err as Error).message}`);
+    }
   }
   try {
     await oscService.start();
@@ -196,7 +280,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     async close() {
       midi.stop();
       oscService.stop();
-      pluginHub.stop();
+      pluginHub?.stop();
       bridge.stop();
       bonjour?.unpublishAll();
       bonjour?.destroy();

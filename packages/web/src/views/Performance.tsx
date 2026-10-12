@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { beatsPerBar, formatDuration, parseTrackName, playView, type Song } from '@setlist/core';
-import { act, usePlayhead, useStore } from '../store.ts';
+import { act, useAccess, usePlayhead, useStore } from '../store.ts';
 import { Button, Eyebrow, colorOf } from '../components/ui.tsx';
 
 function useClock() {
@@ -72,6 +72,8 @@ export function Performance() {
   const state = useStore((s) => s.state)!;
   const time = usePlayhead();
   const clock = useClock();
+  const navigate = useAccess().can('navigate');
+  const jumpLocked = state.locked || !navigate;
   const v = playView(state.songs, state.setlist, time, state.live.tempo, state.queued);
   const song = v.song;
   const entry = song ? state.setlist.entries.find((e) => e.songId === song.id) : undefined;
@@ -109,12 +111,16 @@ export function Performance() {
               Up next: <strong className="font-semibold">{v.queuedSection ? `${v.queuedSection.title} · ${v.queuedSong?.title}` : v.queuedSong?.title}</strong>{' '}
               <span className="text-muted">— {state.queued.hold ? 'when playback stops' : 'at the next boundary'}</span>
             </p>
-            <Button variant="primary" onClick={() => act('jumpQueuedNow')} disabled={state.locked}>
-              Jump now
-            </Button>
-            <Button variant="ghost" onClick={() => act('cancelQueue')} disabled={state.locked}>
-              Cancel
-            </Button>
+            {navigate && (
+              <>
+                <Button variant="primary" onClick={() => act('jumpQueuedNow')} disabled={state.locked}>
+                  Jump now
+                </Button>
+                <Button variant="ghost" onClick={() => act('cancelQueue')} disabled={state.locked}>
+                  Cancel
+                </Button>
+              </>
+            )}
           </section>
         )}
 
@@ -144,13 +150,13 @@ export function Performance() {
           <section className="flex flex-col gap-3.5">
             <div className="flex items-baseline justify-between gap-4">
               <h3 className="m-0 text-[21px] font-semibold tracking-[-0.01em]">Song map</h3>
-              <span className="text-sm text-muted">Tap a section to jump</span>
+              {navigate && <span className="text-sm text-muted">Tap a section to jump</span>}
             </div>
-            <SongMap song={song} time={time} locked={state.locked} />
+            <SongMap song={song} time={time} locked={jumpLocked} />
             {quick.length > 0 && (
               <div className="mt-2 flex flex-wrap justify-center gap-2">
                 {quick.map((s) => (
-                  <Button key={s.id} variant="outline" disabled={state.locked} onClick={() => act('jumpToSection', song.id, s.id)}>
+                  <Button key={s.id} variant="outline" disabled={jumpLocked} onClick={() => act('jumpToSection', song.id, s.id)}>
                     {s.title}
                   </Button>
                 ))}

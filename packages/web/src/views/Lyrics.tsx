@@ -13,8 +13,16 @@ import {
   type Section,
   type Song,
 } from '@setlist/core';
-import { act, usePlayhead, usePref, useStore } from '../store.ts';
-import { Button, Select, colorOf } from '../components/ui.tsx';
+import { act, useAccess, usePlayhead, usePref, useStore } from '../store.ts';
+import { Button, Segmented, colorOf } from '../components/ui.tsx';
+
+type ChordMode = 'show' | 'hide' | 'only';
+
+const CHORD_MODES: { value: ChordMode; label: string }[] = [
+  { value: 'hide', label: 'Lyrics' },
+  { value: 'show', label: 'Lyrics + Chords' },
+  { value: 'only', label: 'Chords' },
+];
 
 const SIZE: Record<string, string> = { large: '1.35em', small: '0.8em', tiny: '0.65em' };
 
@@ -33,13 +41,14 @@ function Row({
   track,
   transpose,
   align,
+  chords,
 }: {
   parts: LyricPart[];
   track: LyricsTrack;
   transpose: { semitones: number; flats: boolean } | null;
   align: 'left' | 'center';
+  chords: ChordMode;
 }) {
-  const chords = track.options.chords;
   const hasChords = parts.some((p) => p.chord) && chords !== 'hide';
   if (chords === 'only') {
     const list = parts.filter((p) => p.chord).map((p) => transposeChord(p.chord!, transpose?.semitones ?? 0, transpose?.flats));
@@ -68,11 +77,18 @@ type Item = { kind: 'header'; section: Section; song: Song } | { kind: 'songTitl
 export function Lyrics() {
   const state = useStore((s) => s.state)!;
   const time = usePlayhead();
-  const tracks = useMemo(() => lyricsTracks(state.live.tracks), [state.live.tracks]);
-  const [trackId, setTrackId] = usePref<string | null>('lyricsTrack', null);
+  const access = useAccess();
+  const allTracks = useMemo(() => lyricsTracks(state.live.tracks), [state.live.tracks]);
+  const tracks = allTracks.filter((t) => access.canSeeLyrics(t.title));
+  const canJump = access.can('navigate') && !state.locked;
+  // Remembered by title so it survives track reordering in Live.
+  const [trackTitle, setTrackTitle] = usePref<string | null>('lyricsTrackTitle', null);
+  const [modes, setModes] = usePref<Record<string, ChordMode>>('lyricsChordModes', {});
   const [scale, setScale] = usePref('lyricsScale', 1);
   const [pinned, setPinned] = useState<number | null>(null);
-  const track = tracks.find((t) => t.id === trackId) ?? tracks[0];
+  const track = tracks.find((t) => t.title === trackTitle) ?? tracks[0];
+  const hasChords = !!track?.lines.some((l) => l.rows.some((r) => r.some((part) => part.chord)));
+  const chordMode: ChordMode = track ? (modes[track.title] ?? track.options.chords) : 'show';
   const loc = locate(state.songs, time);
   const song = state.songs[loc.songIndex];
 
@@ -119,7 +135,7 @@ export function Lyrics() {
       else if (e.key === ',') setPinned(clamp((pinned ?? playingIdx) - 1));
       else if (e.key.toLowerCase() === 'b' && !e.shiftKey) setPinned(null);
       else if (e.key === 'M' && e.shiftKey) setPinned(pinned === null ? Math.max(0, playingIdx) : null);
-      else if (e.key === 'm' || e.key === 'n') {
+      else if ((e.key === 'm' || e.key === 'n') && canJump) {
         const target = clamp(playingIdx + (e.key === 'm' ? 1 : -1));
         if (lines[target]) act('jumpToTime', lines[target].start);
         setPinned(target);
@@ -136,7 +152,13 @@ export function Lyrics() {
         <div className="flex max-w-md flex-col gap-3">
           <h1 className="headline m-0 text-5xl">No lyrics yet.</h1>
           <p className="m-0 text-[17px] text-muted">
-            Add a MIDI track with <code>+LYRICS</code> in its name to your Live set, with one clip per line.
+            {allTracks.length > 0 ? (
+              'The owner hasn’t shared a lyrics track with viewers.'
+            ) : (
+              <>
+                Add a MIDI track with <code>+LYRICS</code> in its name to your Live set, with one clip per line.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -154,10 +176,11 @@ export function Lyrics() {
   return (
     <div className="flex h-full flex-col bg-panel">
       <div className="no-print mx-auto flex w-full max-w-[980px] flex-wrap items-center gap-3 px-6 pt-5">
-        {tracks.length > 1 && <Select label="Lyrics track" value={track.id} options={tracks.map((t) => ({ value: t.id, label: t.title }))} onChange={setTrackId} />}
-        <p className="m-0 flex-1 truncate text-[15px] text-muted">
-          {song?.title ?? 'Not in a song'} · {track.title}
-        </p>
+        {tracks.length > 1 && (
+          <Segmented label="Lyrics track" value={track.title} options={tracks.map((t) => ({ value: t.title, label: t.title }))} onChange={setTrackTitle} className="flex-nowrap" />
+        )}
+        {hasChords && <Segmented label="Show" value={chordMode} options={CHORD_MODES} onChange={(m) => setModes({ ...modes, [track.title]: m })} className="flex-nowrap" />}
+        <p className="m-0 min-w-[120px] flex-1 truncate text-[15px] text-muted">{song?.title ?? 'Not in a song'}</p>
         {pinned !== null && (
           <Button variant="ghost" onClick={() => setPinned(null)}>
             Back to current
@@ -203,7 +226,7 @@ export function Lyrics() {
                 type="button"
                 key={line.id}
                 ref={isActive ? activeRef : undefined}
-                disabled={state.locked}
+                disabled={!canJump}
                 onClick={() => act('jumpToTime', line.start)}
                 aria-current={isActive ? 'true' : undefined}
                 className={`relative block w-full py-2 leading-[1.15] tracking-[-0.02em] transition-all duration-300 ${isActive ? 'font-bold' : 'font-semibold'} ${
@@ -222,7 +245,7 @@ export function Lyrics() {
                 {line.image ? (
                   <img src={`/lyrics-images/${line.image.src}`} alt="" className={`mx-auto rounded-2xl ${line.image.full ? 'max-h-[80vh] w-full object-contain' : 'max-h-[50vh]'}`} />
                 ) : (
-                  line.rows.map((parts, i) => <Row key={i} parts={parts} track={track} transpose={transposeFor(item.song)} align={align} />)
+                  line.rows.map((parts, i) => <Row key={i} parts={parts} track={track} transpose={transposeFor(item.song)} align={align} chords={chordMode} />)
                 )}
                 {o.progress && isActive && (
                   <span className="mx-auto mt-3 block h-1 w-32 overflow-hidden rounded-full bg-line">

@@ -1,3 +1,4 @@
+import type { Role } from './access.ts';
 import type { PlaybackPlan } from './plan.ts';
 import type { Setlist } from './setlist.ts';
 import type { Song } from './songs.ts';
@@ -103,8 +104,24 @@ export interface AppState {
   urls: string[];
   midiInputs: string[];
   midiLearn: { mappingId: string } | null;
-  /** Connected "Setlist Sync" plugin instances. */
+  /** Connected "Setlist Sync" plugin instances (plugin support is currently disabled). */
   plugins: PluginInstance[];
+  access: AccessInfo;
+}
+
+export interface AccessInfo {
+  /** An owner PIN is set: devices without it are viewers. */
+  pinSet: boolean;
+  owners: number;
+  viewers: number;
+}
+
+/** Sent to one client: its own role. */
+export interface Session {
+  role: Role;
+  /** Remembered by the device so it stays owner after a reload. */
+  token?: string;
+  error?: string;
 }
 
 export type ServerToClient =
@@ -112,8 +129,15 @@ export type ServerToClient =
   /** Top-level keys that changed. */
   | { type: 'patch'; state: Partial<AppState> }
   | { type: 'time'; time: Beats; playing: boolean }
-  | { type: 'meters'; levels: [string, number, number][] };
+  | { type: 'meters'; levels: [string, number, number][] }
+  | { type: 'session'; session: Session };
 
 export type ClientToServer =
+  | { type: 'hello'; token?: string }
   | { type: 'action'; action: string; args?: unknown[] }
-  | { type: 'meters'; enabled: boolean };
+  | { type: 'meters'; enabled: boolean }
+  /** Enter the owner PIN. */
+  | { type: 'signIn'; pin: string }
+  | { type: 'signOut' }
+  /** Owner only: set, change (pin) or remove (null) the owner PIN. */
+  | { type: 'setPin'; pin: string | null };
