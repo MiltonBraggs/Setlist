@@ -12,6 +12,7 @@ import {
   parseTrackName,
   reconcileSetlist,
   silencePoints,
+  normalizeViewerPermissions,
   sectionByOffset,
   setlistFromText,
   songByOffset,
@@ -103,6 +104,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       midiInputs: [],
       midiLearn: null,
       plugins: [],
+      access: { pinSet: false, owners: 0, viewers: 0 },
     };
     bridge.on('message', (m) => this.onScriptMessage(m));
     bridge.on('connected', (c) => {
@@ -488,6 +490,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
 
   updateSettings(partial: Partial<Settings>) {
     const settings = { ...this.state.settings, ...partial };
+    if ('viewer' in partial) settings.viewer = normalizeViewerPermissions(partial.viewer);
     this.storage.saveSettings(settings);
     this.set({ settings });
     if ('autojumpNextSong' in partial) this.pushPlan();
@@ -498,6 +501,12 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     clearTimeout(this.notificationTimer);
     this.set({ notification: { id: ++this.notificationId, text, big } });
     this.notificationTimer = setTimeout(() => this.set({ notification: null }), 15000);
+  }
+
+  setAccess(access: AppState['access']) {
+    const a = this.state.access;
+    if (a.pinSet === access.pinSet && a.owners === access.owners && a.viewers === access.viewers) return;
+    this.set({ access });
   }
 
   setUrls(urls: string[]) {

@@ -1,5 +1,7 @@
-import type { JumpMode, MidiMapping, Settings as SettingsT } from '@setlist/core';
+import { useState } from 'react';
+import { lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
 import { act, useStore } from '../store.ts';
+import { PinDialog } from '../components/Access.tsx';
 import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
 
 const JUMP_MODES: { value: JumpMode; label: string; hint: string }[] = [
@@ -30,6 +32,91 @@ export const ACTION_LABELS: Record<string, string> = {
   toggleLock: 'Lock',
   osc: 'Custom OSC command',
 };
+
+const VIEWER_PAGES: { id: ViewerPage; label: string }[] = [
+  { id: 'performance', label: 'Performance' },
+  { id: 'setlist', label: 'Setlist' },
+  { id: 'lyrics', label: 'Lyrics' },
+  { id: 'mixer', label: 'Mixer' },
+];
+
+const VIEWER_CONTROLS: { key: 'transport' | 'navigate' | 'editSetlist' | 'mixer'; label: string; hint: string }[] = [
+  { key: 'transport', label: 'Play, stop and GO', hint: 'Start and stop the show.' },
+  { key: 'navigate', label: 'Jump to songs and sections', hint: 'Queue jumps, skip around, loop sections.' },
+  { key: 'editSetlist', label: 'Edit the setlist', hint: 'Reorder, add, remove, save and load.' },
+  { key: 'mixer', label: 'Change the mixer', hint: 'Mute, solo and volume of track groups.' },
+];
+
+function ViewerAccess() {
+  const state = useStore((s) => s.state)!;
+  const viewer = state.settings.viewer;
+  const [pinOpen, setPinOpen] = useState(false);
+  const set = (patch: Partial<ViewerPermissions>) => act('updateSettings', { viewer: { ...viewer, ...patch } });
+  const lyricTitles = [...new Set(lyricsTracks(state.live.tracks).map((t) => t.title))];
+  const allowedLyrics = viewer.lyricsTracks ?? lyricTitles;
+  const { pinSet, owners, viewers } = state.access;
+
+  return (
+    <>
+      <Group
+        title="Owner and bandmates"
+        footer={pinSet ? 'Devices that enter the PIN become owners. This computer is always owner.' : 'Without a PIN, every device that opens Setlist has full control.'}
+      >
+        <Row label="Owner PIN" hint={pinSet ? 'Set' : 'Not set'}>
+          <Button variant="outline" onClick={() => setPinOpen(true)}>
+            {pinSet ? 'Change…' : 'Set PIN…'}
+          </Button>
+        </Row>
+        <Row label="Connected devices">
+          <span className="text-[15px] text-muted tabular">
+            {owners} owner{owners === 1 ? '' : 's'} · {viewers} viewer{viewers === 1 ? '' : 's'}
+          </span>
+        </Row>
+      </Group>
+
+      <Group title="What viewers can see" footer={pinSet ? undefined : 'These apply once you set an owner PIN.'}>
+        {VIEWER_PAGES.map((page) => (
+          <Row key={page.id} label={page.label}>
+            <Switch label={`Viewers can see ${page.label}`} checked={viewer.pages[page.id]} onChange={(on) => set({ pages: { ...viewer.pages, [page.id]: on } })} />
+          </Row>
+        ))}
+        {viewer.pages.lyrics && lyricTitles.length > 0 && (
+          <Row label="Lyrics tracks" hint="Which +LYRICS tracks viewers can open." stacked>
+            <div className="flex flex-wrap gap-2">
+              {lyricTitles.map((title) => {
+                const on = allowedLyrics.includes(title);
+                return (
+                  <button
+                    key={title}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      const next = on ? allowedLyrics.filter((t) => t !== title) : [...allowedLyrics, title];
+                      set({ lyricsTracks: next.length === lyricTitles.length ? null : next });
+                    }}
+                    className={`min-h-9 rounded-full px-4 text-sm transition ${on ? 'bg-accent text-onaccent' : 'bg-panel2 text-muted'}`}
+                  >
+                    {title}
+                  </button>
+                );
+              })}
+            </div>
+          </Row>
+        )}
+      </Group>
+
+      <Group title="What viewers can do">
+        {VIEWER_CONTROLS.map((c) => (
+          <Row key={c.key} label={c.label} hint={c.hint}>
+            <Switch label={`Viewers can ${c.label.toLowerCase()}`} checked={viewer[c.key]} onChange={(on) => set({ [c.key]: on })} />
+          </Row>
+        ))}
+      </Group>
+
+      {pinOpen && <PinDialog onClose={() => setPinOpen(false)} />}
+    </>
+  );
+}
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
@@ -67,14 +154,6 @@ export function SettingsView() {
               {state.liveConnected ? `Connected · script ${state.scriptVersion ?? ''}` : 'Not connected'}
             </span>
           </Row>
-          <Row
-            label="Setlist Sync plugin"
-            hint={state.plugins.length > 0 ? undefined : 'Add it to Master for exact stops. Without it, stops can land up to ~100 ms late.'}
-          >
-            <span className="text-[15px] text-muted">
-              {state.plugins.length > 0 ? `On ${state.plugins.map((p) => p.track ?? 'a track').join(', ')} · exact stops` : 'Not found'}
-            </span>
-          </Row>
           <Row label="Open on other devices" hint={state.urls.length > 2 ? state.urls.slice(1).join(' · ') : undefined}>
             {lanUrl && (
               <a href={lanUrl} className="text-[15px] text-link no-underline hover:underline">
@@ -83,6 +162,8 @@ export function SettingsView() {
             )}
           </Row>
         </Group>
+
+        <ViewerAccess />
 
         <Group title="Playback">
           <Row label="Jump mode" hint={JUMP_MODES.find((m) => m.value === s.jumpMode)?.hint} stacked>
