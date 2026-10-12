@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { beatsPerBar, formatDuration, parseTrackName, playView, type Song } from '@setlist/core';
 import { act, usePlayhead, useStore } from '../store.ts';
-import { Button, colorOf } from '../components/ui.tsx';
+import { Button, Eyebrow, colorOf } from '../components/ui.tsx';
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -12,7 +12,16 @@ function useClock() {
   return now;
 }
 
-export function Metronome({ time, color }: { time: number; color: string }) {
+function Stat({ value, label, children }: { value?: string; label: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {children ?? <span className="tabular text-[32px] font-semibold tracking-[-0.02em]">{value}</span>}
+      <span className="text-[13px] text-muted">{label}</span>
+    </div>
+  );
+}
+
+export function Metronome({ time }: { time: number }) {
   const state = useStore((s) => s.state)!;
   const playing = useStore((s) => s.playing);
   const { sigNum, sigDen } = state.live;
@@ -23,45 +32,38 @@ export function Metronome({ time, color }: { time: number; color: string }) {
   const measureClip = measureTrack?.clips?.find((c) => time >= c.start - 1e-6 && time < c.end - 1e-6);
   const measure = measureClip ? measureClip.name : String(Math.floor(time / bar) + 1);
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex gap-1.5">
+    <Stat label={`Bar ${measure}`}>
+      <span className="flex h-[38px] items-center gap-2" aria-hidden>
         {Array.from({ length: sigNum }, (_, i) => (
-          <div
-            key={i}
-            className="h-4 w-4 rounded-full transition-opacity duration-75"
-            style={{ background: i === beat && playing ? color : 'var(--line)', opacity: i === beat && playing ? 1 : 0.8 }}
-          />
+          <span key={i} className={`h-3 w-3 rounded-full transition-colors duration-75 ${i === beat && playing ? 'bg-accent' : 'bg-line2'}`} />
         ))}
-      </div>
-      <span className="tabular text-sm text-muted">Bar {measure}</span>
-    </div>
+      </span>
+    </Stat>
   );
 }
 
-function SongProgress({ song, time }: { song: Song; time: number }) {
-  const span = song.end - song.start || 1;
-  const pct = Math.max(0, Math.min(1, (time - song.start) / span)) * 100;
-  const locked = useStore((s) => s.state!.locked);
+function SongMap({ song, time, locked }: { song: Song; time: number; locked: boolean }) {
   return (
-    <div className="relative flex h-12 w-full overflow-hidden rounded-lg bg-panel2">
+    <div className="flex gap-1.5">
       {song.sections.map((sec) => {
-        const left = ((sec.start - song.start) / span) * 100;
-        const width = ((sec.end - sec.start) / span) * 100;
         const active = time >= sec.start && time < sec.end;
+        const dim = sec.optional || sec.flags.skip;
         return (
           <button
             key={sec.id}
+            type="button"
             disabled={locked}
             onClick={() => act('jumpToSection', song.id, sec.id)}
-            className={`absolute top-0 h-full truncate border-r border-bg px-2 text-left text-xs ${sec.optional || sec.flags.skip ? 'opacity-40' : ''}`}
-            style={{ left: `${left}%`, width: `${width}%`, background: active ? `color-mix(in srgb, ${colorOf(sec.color ?? song.color, 'var(--accent)')} 35%, transparent)` : undefined }}
             title={sec.title}
+            style={{ flex: `${Math.max(1, sec.end - sec.start)} 1 0` }}
+            className={`min-h-14 min-w-0 truncate rounded-[14px] px-2 text-sm transition active:scale-[0.98] ${
+              active ? 'bg-accent font-semibold text-onaccent' : `bg-panel ${dim ? 'text-faint line-through' : 'text-fg'} hover:brightness-95`
+            }`}
           >
             {sec.title}
           </button>
         );
       })}
-      <div className="pointer-events-none absolute top-0 h-full w-0.5 bg-fg" style={{ left: `${pct}%` }} />
     </div>
   );
 }
@@ -72,89 +74,95 @@ export function Performance() {
   const clock = useClock();
   const v = playView(state.songs, state.setlist, time, state.live.tempo, state.queued);
   const song = v.song;
-  const color = colorOf(v.section?.color ?? song?.color, 'var(--accent)');
   const entry = song ? state.setlist.entries.find((e) => e.songId === song.id) : undefined;
   const description = entry?.description ?? song?.description;
   const sectionSpan = v.section ? v.section.end - v.section.start : 0;
+  const sectionPct = v.section ? Math.min(100, ((time - v.section.start) / (sectionSpan || 1)) * 100) : 0;
   const quick = song?.sections.filter((s) => s.quickAccess) ?? [];
   const endTime = new Date(clock.getTime() + v.setRemaining * 1000);
-  const fmtClock = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtClock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const sectionColor = v.section?.color ? colorOf(v.section.color) : undefined;
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-auto p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
-        <span>
-          {v.songNumber > 0 ? `Song ${v.songNumber} of ${v.songCount}` : `${v.songCount} songs`} · {state.setlist.name}
-        </span>
-        <span className="tabular">
-          {fmtClock(clock)} · set left {formatDuration(v.setRemaining)} · ends ≈ {fmtClock(endTime)}
-        </span>
-      </div>
-
-      {state.queued && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-accent bg-accent/15 p-3">
-          <span className="font-medium">
-            Queued: {v.queuedSection ? `${v.queuedSection.title} (${v.queuedSong?.title})` : v.queuedSong?.title}
-            {state.queued.hold && ' — jumps when stopped'}
-          </span>
-          <div className="flex-1" />
-          <Button onClick={() => act('jumpQueuedNow')} variant="primary" disabled={state.locked}>
-            Jump now
-          </Button>
-          <Button onClick={() => act('cancelQueue')} disabled={state.locked}>
-            Cancel
-          </Button>
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-line bg-panel p-5" style={{ borderLeft: `8px solid ${colorOf(song?.color, 'var(--line)')}` }}>
-        <div className="text-[clamp(2rem,6vw,4.5rem)] font-bold leading-tight">{song?.title ?? (v.nextSong ? `Next: ${v.nextSong.title}` : 'No song')}</div>
-        {description && <div className="mt-1 text-xl text-muted">{description}</div>}
-        {song && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 tabular text-lg">
-            <span>{formatDuration(v.songElapsed)}</span>
-            <span className="text-muted">−{formatDuration(v.songRemaining)}</span>
-            <span className="text-muted">{Math.round(state.live.tempo)} BPM · {state.live.sigNum}/{state.live.sigDen}</span>
-            <Metronome time={time} color={color} />
-          </div>
-        )}
-      </div>
-
-      {song && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-line bg-panel p-5">
-            <div className="text-xs uppercase tracking-wider text-muted">Section</div>
-            <div className="mt-1 flex items-center gap-3 text-[clamp(1.75rem,4vw,3rem)] font-semibold" style={{ color }}>
-              {v.section?.title ?? '—'}
-              {state.live.loop.on && <span className="rounded bg-accent px-2 py-0.5 text-sm text-white">LOOP</span>}
+    <div className="h-full overflow-auto">
+      <div className="mx-auto flex max-w-[1180px] flex-col gap-12 px-6 pt-16 pb-44">
+        <section className="flex flex-col items-center gap-3 text-center">
+          <Eyebrow accent>
+            {v.songNumber > 0 ? `Song ${v.songNumber} of ${v.songCount}` : `${v.songCount} songs`} · {state.setlist.name}
+          </Eyebrow>
+          <h1 className="headline m-0 text-[clamp(56px,9vw,112px)]">{song?.title ?? (v.nextSong ? v.nextSong.title : 'No song')}</h1>
+          <p className="m-0 text-[28px] tracking-[-0.01em] text-muted">{song ? description : v.nextSong ? 'Up next. Press GO to start.' : 'Add locators to your Arrangement in Live.'}</p>
+          {song && (
+            <div className="mt-7 flex flex-wrap justify-center gap-12">
+              <Stat value={formatDuration(v.songElapsed)} label="Elapsed" />
+              <Stat value={`−${formatDuration(v.songRemaining)}`} label="Remaining" />
+              <Stat value={String(Math.round(state.live.tempo))} label={`BPM · ${state.live.sigNum}/${state.live.sigDen}`} />
+              <Metronome time={time} />
             </div>
-            {v.section && (
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel2">
-                <div className="h-full" style={{ width: `${Math.min(100, ((time - v.section.start) / (sectionSpan || 1)) * 100)}%`, background: color }} />
+          )}
+        </section>
+
+        {state.queued && (
+          <section aria-label="Queued jump" className="flex flex-wrap items-center gap-4 rounded-[18px] bg-panel px-6 py-4">
+            <span className="h-2.5 w-2.5 rounded-full bg-accent" />
+            <p className="m-0 min-w-[220px] flex-1 text-[17px]">
+              Up next: <strong className="font-semibold">{v.queuedSection ? `${v.queuedSection.title} · ${v.queuedSong?.title}` : v.queuedSong?.title}</strong>{' '}
+              <span className="text-muted">— {state.queued.hold ? 'when playback stops' : 'at the next boundary'}</span>
+            </p>
+            <Button variant="primary" onClick={() => act('jumpQueuedNow')} disabled={state.locked}>
+              Jump now
+            </Button>
+            <Button variant="ghost" onClick={() => act('cancelQueue')} disabled={state.locked}>
+              Cancel
+            </Button>
+          </section>
+        )}
+
+        {song && (
+          <section className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-5">
+            <article className="flex flex-col gap-3 rounded-[28px] bg-panel p-6 sm:p-10">
+              <div className="flex items-center justify-between gap-3">
+                <p className="m-0 text-sm font-semibold text-muted">Now</p>
+                {state.live.loop.on && <span className="rounded-full bg-accent px-3 py-1 text-[13px] font-semibold text-onaccent">Looping</span>}
+              </div>
+              <h2 className="m-0 text-[40px] font-bold sm:text-[56px] tracking-[-0.03em] text-accent" style={sectionColor ? { color: sectionColor } : undefined}>
+                {v.section?.title ?? '—'}
+              </h2>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${sectionPct}%` }} />
+              </div>
+            </article>
+            <article className="flex flex-col gap-3 rounded-[28px] bg-panel p-6 sm:p-10">
+              <p className="m-0 text-sm font-semibold text-muted">Next</p>
+              <h2 className="m-0 text-[40px] font-bold sm:text-[56px] tracking-[-0.03em]">{v.nextSection?.title ?? v.nextSong?.title ?? 'End of set'}</h2>
+              {v.nextSection && v.nextSong && <p className="m-0 text-[17px] text-muted">Then {v.nextSong.title}</p>}
+            </article>
+          </section>
+        )}
+
+        {song && song.sections.length > 0 && (
+          <section className="flex flex-col gap-3.5">
+            <div className="flex items-baseline justify-between gap-4">
+              <h3 className="m-0 text-[21px] font-semibold tracking-[-0.01em]">Song map</h3>
+              <span className="text-sm text-muted">Tap a section to jump</span>
+            </div>
+            <SongMap song={song} time={time} locked={state.locked} />
+            {quick.length > 0 && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                {quick.map((s) => (
+                  <Button key={s.id} variant="outline" disabled={state.locked} onClick={() => act('jumpToSection', song.id, s.id)}>
+                    {s.title}
+                  </Button>
+                ))}
               </div>
             )}
-          </div>
-          <div className="rounded-2xl border border-line bg-panel p-5">
-            <div className="text-xs uppercase tracking-wider text-muted">Next</div>
-            <div className="mt-1 text-[clamp(1.5rem,3.5vw,2.5rem)] font-semibold">
-              {v.nextSection?.title ?? (v.nextSong ? v.nextSong.title : 'End of set')}
-            </div>
-            {v.nextSection && v.nextSong && <div className="text-muted">then {v.nextSong.title}</div>}
-          </div>
-        </div>
-      )}
+          </section>
+        )}
 
-      {song && <SongProgress song={song} time={time} />}
-
-      {quick.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {quick.map((s) => (
-            <Button key={s.id} disabled={state.locked} onClick={() => act('jumpToSection', song!.id, s.id)} className="h-12 px-5 text-base">
-              {s.title}
-            </Button>
-          ))}
-        </div>
-      )}
+        <p className="m-0 text-center text-sm text-muted tabular">
+          Set ends at about {fmtClock(endTime)} · {formatDuration(v.setRemaining)} left
+        </p>
+      </div>
     </div>
   );
 }

@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autojumpNextSong: true,
   countInBars: 0,
   countInSoloClick: true,
-  theme: 'dark',
+  theme: 'light',
   fontScale: 1,
   oscPort: 39051,
   projectFolder: null,

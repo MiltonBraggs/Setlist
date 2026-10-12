@@ -1,43 +1,49 @@
-import type { ReactNode } from 'react';
 import type { JumpMode, MidiMapping, Settings as SettingsT } from '@setlist/core';
 import { act, useStore } from '../store.ts';
-import { Button, Select, TextInput, Toggle } from '../components/ui.tsx';
+import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
 
 const JUMP_MODES: { value: JumpMode; label: string; hint: string }[] = [
-  { value: 'quantized', label: 'Quantized', hint: "Uses Live's global quantization" },
-  { value: 'endOfSection', label: 'End of section', hint: 'Waits for the current section to end' },
-  { value: 'endOfSong', label: 'End of song', hint: 'Waits for the current song to end' },
-  { value: 'dynamic', label: 'Dynamic', hint: 'Sections at section end, songs at song end' },
-  { value: 'manual', label: 'Manual', hint: 'Jumps only when playback is stopped' },
+  { value: 'quantized', label: 'Quantized', hint: 'Jumps follow Live’s global quantization.' },
+  { value: 'endOfSection', label: 'End of section', hint: 'Jumps wait for the current section to end.' },
+  { value: 'endOfSong', label: 'End of song', hint: 'Jumps wait for the current song to end.' },
+  { value: 'dynamic', label: 'Dynamic', hint: 'Sections jump at the end of a section, songs at the end of a song.' },
+  { value: 'manual', label: 'Manual', hint: 'Jumps happen only while playback is stopped.' },
 ];
 
 export const ACTION_LABELS: Record<string, string> = {
-  go: 'GO (context aware)',
+  go: 'GO',
   playPause: 'Play / pause',
   playStop: 'Play / stop',
   play: 'Play',
   pause: 'Pause',
   stop: 'Stop',
-  nextSong: 'Next song / escape loop',
+  nextSong: 'Next song',
   prevSong: 'Previous song',
   nextSection: 'Next section',
   prevSection: 'Previous section',
-  toggleLoop: 'Toggle loop',
+  toggleLoop: 'Loop',
   escapeLoop: 'Escape loop',
-  jumpQueued: 'Jump to queued (quantized)',
-  jumpQueuedNow: 'Jump to queued (instant)',
+  jumpQueued: 'Jump to queued',
+  jumpQueuedNow: 'Jump to queued now',
   cancelQueue: 'Cancel queued jump',
-  toggleRecord: 'Toggle recording',
-  toggleLock: 'Toggle lock',
-  osc: 'Custom OSC command…',
+  toggleRecord: 'Record',
+  toggleLock: 'Lock',
+  osc: 'Custom OSC command',
 };
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
-    <section className="rounded-xl border border-line bg-panel p-4">
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted">{title}</h2>
-      {children}
-    </section>
+    <label className="flex items-center gap-2 text-sm text-muted">
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value < 0 ? '' : value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="min-h-9 w-16 rounded-xl bg-panel2 px-2 text-fg outline-none"
+      />
+    </label>
   );
 }
 
@@ -47,140 +53,200 @@ export function SettingsView() {
   const set = (partial: Partial<SettingsT>) => act('updateSettings', partial);
   const mappings = s.midiMappings;
   const setMapping = (id: string, patch: Partial<MidiMapping>) => set({ midiMappings: mappings.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
+  const lanUrl = state.urls.find((u) => !u.includes('localhost')) ?? state.urls[0];
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 overflow-auto p-4">
-      <Section title="Connection">
-        <div className="text-sm">
-          Ableton Live:{' '}
-          {state.liveConnected ? <span className="text-ok">connected (script {state.scriptVersion})</span> : <span className="text-danger">not connected</span>}
-        </div>
-        <div className="mt-1 text-sm">
-          Setlist Sync plugin:{' '}
-          {state.plugins.length > 0 ? (
-            <span className="text-ok">
-              {state.plugins.length} instance{state.plugins.length > 1 ? 's' : ''} ({state.plugins.map((p) => p.track ?? 'unnamed track').join(', ')}): sample-accurate stops
+    <div className="h-full overflow-auto">
+      <div className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-16 pb-44">
+        <h1 className="headline m-0 text-[clamp(48px,7vw,72px)]">Settings.</h1>
+
+        <Group title="Connection">
+          <Row label="Ableton Live">
+            <span className="inline-flex items-center gap-2 text-[15px] text-muted">
+              <span className={`h-2 w-2 rounded-full ${state.liveConnected ? 'bg-ok' : 'bg-danger'}`} />
+              {state.liveConnected ? `Connected · script ${state.scriptVersion ?? ''}` : 'Not connected'}
             </span>
-          ) : (
-            <span className="text-muted">not detected. Stops are accurate to ~100 ms; add the plugin to Master for exact stops.</span>
-          )}
-        </div>
-        <div className="mt-2 text-sm text-muted">Open Setlist on other devices on this network:</div>
-        <ul className="mt-1 text-sm">
-          {state.urls.map((u) => (
-            <li key={u}><a className="text-accent" href={u}>{u}</a></li>
-          ))}
-        </ul>
-      </Section>
+          </Row>
+          <Row
+            label="Setlist Sync plugin"
+            hint={state.plugins.length > 0 ? undefined : 'Add it to Master for exact stops. Without it, stops can land up to ~100 ms late.'}
+          >
+            <span className="text-[15px] text-muted">
+              {state.plugins.length > 0 ? `On ${state.plugins.map((p) => p.track ?? 'a track').join(', ')} · exact stops` : 'Not found'}
+            </span>
+          </Row>
+          <Row label="Open on other devices" hint={state.urls.length > 2 ? state.urls.slice(1).join(' · ') : undefined}>
+            {lanUrl && (
+              <a href={lanUrl} className="text-[15px] text-link no-underline hover:underline">
+                {lanUrl.replace(/^https?:\/\//, '')}
+              </a>
+            )}
+          </Row>
+        </Group>
 
-      <Section title="Playback">
-        <div className="flex items-center justify-between gap-4 py-2">
-          <span>
-            <span className="block">Jump mode</span>
-            <span className="block text-xs text-muted">{JUMP_MODES.find((m) => m.value === s.jumpMode)?.hint}</span>
-          </span>
-          <Select value={s.jumpMode} options={JUMP_MODES} onChange={(jumpMode) => set({ jumpMode })} />
-        </div>
-        <Toggle label="Autojump to the next song" hint="At STOP locators, move to the next song in the setlist" checked={s.autojumpNextSong} onChange={(autojumpNextSong) => set({ autojumpNextSong })} />
-        <div className="flex items-center justify-between gap-4 py-2">
-          <span>
-            <span className="block">Count-in</span>
-            <span className="block text-xs text-muted">When starting playback. Override per section with [c:N]</span>
-          </span>
-          <Select
-            value={s.countInBars}
-            options={[0, 1, 2, 4].map((n) => ({ value: n as SettingsT['countInBars'], label: n ? `${n} bar${n > 1 ? 's' : ''}` : 'Off' }))}
-            onChange={(countInBars) => set({ countInBars })}
-          />
-        </div>
-        <Toggle label="Solo click during count-in" hint="Tracks named Click or flagged +CLICK" checked={s.countInSoloClick} onChange={(countInSoloClick) => set({ countInSoloClick })} />
-      </Section>
+        <Group title="Playback">
+          <Row label="Jump mode" hint={JUMP_MODES.find((m) => m.value === s.jumpMode)?.hint} stacked>
+            <Segmented label="Jump mode" value={s.jumpMode} options={JUMP_MODES} onChange={(jumpMode) => set({ jumpMode })} />
+          </Row>
+          <Row label="Autojump to the next song" hint="After a STOP locator, park at the next song.">
+            <Switch label="Autojump to the next song" checked={s.autojumpNextSong} onChange={(autojumpNextSong) => set({ autojumpNextSong })} />
+          </Row>
+          <Row label="Count-in" hint="When starting playback. Override per section with [c:N].">
+            <Segmented
+              label="Count-in"
+              value={s.countInBars}
+              options={[0, 1, 2, 4].map((n) => ({ value: n as SettingsT['countInBars'], label: n === 0 ? 'Off' : n === 1 ? '1 bar' : String(n) }))}
+              onChange={(countInBars) => set({ countInBars })}
+            />
+          </Row>
+          <Row label="Solo click during count-in" hint="Tracks named Click or flagged +CLICK.">
+            <Switch label="Solo click during count-in" checked={s.countInSoloClick} onChange={(countInSoloClick) => set({ countInSoloClick })} />
+          </Row>
+        </Group>
 
-      <Section title="Appearance">
-        <div className="flex items-center justify-between gap-4 py-2">
-          <span>Theme</span>
-          <Select value={s.theme} options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} onChange={(theme) => set({ theme })} />
-        </div>
-        <div className="flex items-center justify-between gap-4 py-2">
-          <span>Font size</span>
-          <input type="range" min={0.75} max={1.5} step={0.05} value={s.fontScale} onChange={(e) => set({ fontScale: Number(e.target.value) })} />
-        </div>
-      </Section>
-
-      <Section title="MIDI mapping">
-        {state.midiInputs.length === 0 && <p className="text-sm text-muted">No MIDI inputs found. On Windows, disable the device in Live's MIDI preferences so Setlist can open it.</p>}
-        <ul className="flex flex-col gap-2">
+        <Group
+          title="MIDI"
+          footer={state.midiInputs.length === 0 ? 'No MIDI inputs found. On Windows, turn the device off in Live’s MIDI preferences so Setlist can use it.' : undefined}
+        >
           {mappings.map((m) => {
             const learning = state.midiLearn?.mappingId === m.id;
             return (
-              <li key={m.id} className="flex flex-col gap-2 rounded-lg bg-panel2 p-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={m.action} options={Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))} onChange={(action) => setMapping(m.id, { action })} />
-                  <span className="text-sm text-muted">
-                    {m.number >= 0 ? `${m.input || 'any input'} · ${m.kind.toUpperCase()} ${m.number} · ch ${m.channel}` : 'not assigned'}
+              <div key={m.id} className="flex flex-col gap-3 px-5 py-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Select
+                    label="Action"
+                    value={m.action}
+                    options={Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))}
+                    onChange={(action) => setMapping(m.id, { action })}
+                  />
+                  <span className="flex-1 text-sm text-muted">
+                    {m.number >= 0 ? `${m.input && m.input !== '*' ? m.input : 'Any input'} · ${m.kind === 'cc' ? 'CC' : m.kind === 'pc' ? 'Program' : 'Note'} ${m.number} · Channel ${m.channel}` : 'Not assigned yet'}
                   </span>
-                  <div className="flex-1" />
-                  <Button active={learning} onClick={() => act(learning ? 'midiLearnCancel' : 'midiLearn', m.id)}>{learning ? 'Press a control…' : 'Learn'}</Button>
-                  <Button variant="ghost" onClick={() => set({ midiMappings: mappings.filter((x) => x.id !== m.id) })}>Remove</Button>
+                  <Button active={learning} onClick={() => act(learning ? 'midiLearnCancel' : 'midiLearn', m.id)}>
+                    {learning ? 'Press a control…' : 'Learn'}
+                  </Button>
+                  <Button variant="ghost" onClick={() => set({ midiMappings: mappings.filter((x) => x.id !== m.id) })}>
+                    Remove
+                  </Button>
                 </div>
                 {m.action === 'osc' && (
                   <TextInput
-                    placeholder='/global/stop; //sleep 500; /setlist/jumpBySongs 1'
+                    aria-label="OSC commands"
+                    placeholder="/global/stop; //sleep 500; /setlist/jumpBySongs 1"
                     defaultValue={m.osc}
                     onBlur={(e) => setMapping(m.id, { osc: e.target.value })}
                   />
                 )}
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Select value={m.kind} options={[{ value: 'note', label: 'Note' }, { value: 'cc', label: 'CC' }, { value: 'pc', label: 'Program' }]} onChange={(kind) => setMapping(m.id, { kind })} />
-                  <label>#<input type="number" min={0} max={127} value={m.number} onChange={(e) => setMapping(m.id, { number: Number(e.target.value) })} className="ml-1 w-16 rounded border border-line bg-panel px-1" /></label>
-                  <label>ch<input type="number" min={1} max={16} value={m.channel} onChange={(e) => setMapping(m.id, { channel: Number(e.target.value) })} className="ml-1 w-14 rounded border border-line bg-panel px-1" /></label>
-                  <Select value={m.input || '*'} options={[{ value: '*', label: 'Any input' }, ...state.midiInputs.map((i) => ({ value: i, label: i }))]} onChange={(input) => setMapping(m.id, { input })} />
+                <div className="flex flex-wrap items-center gap-3">
+                  <Segmented
+                    label="Message type"
+                    value={m.kind}
+                    options={[
+                      { value: 'note', label: 'Note' },
+                      { value: 'cc', label: 'CC' },
+                      { value: 'pc', label: 'Program' },
+                    ]}
+                    onChange={(kind) => setMapping(m.id, { kind })}
+                  />
+                  <NumberField label="Number" value={m.number} min={0} max={127} onChange={(number) => setMapping(m.id, { number })} />
+                  <NumberField label="Channel" value={m.channel} min={1} max={16} onChange={(channel) => setMapping(m.id, { channel })} />
+                  <Select
+                    label="MIDI input"
+                    value={m.input || '*'}
+                    options={[{ value: '*', label: 'Any input' }, ...state.midiInputs.map((i) => ({ value: i, label: i }))]}
+                    onChange={(input) => setMapping(m.id, { input })}
+                  />
                 </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
-        <Button
-          className="mt-3"
-          onClick={() => {
-            const id = Math.random().toString(36).slice(2, 10);
-            set({ midiMappings: [...mappings, { id, input: '*', kind: 'note', channel: 1, number: -1, action: 'go' }] });
-            act('midiLearn', id);
-          }}
+          <button
+            type="button"
+            className="min-h-14 w-full px-5 text-left text-[17px] text-link hover:bg-panel2"
+            onClick={() => {
+              const id = Math.random().toString(36).slice(2, 10);
+              set({ midiMappings: [...mappings, { id, input: '*', kind: 'note', channel: 1, number: -1, action: 'go' }] });
+              act('midiLearn', id);
+            }}
+          >
+            Add mapping…
+          </button>
+        </Group>
+
+        <Group title="Appearance">
+          <Row label="Theme" hint="Dark is easier on the eyes on a dim stage.">
+            <Segmented
+              label="Theme"
+              value={s.theme}
+              options={[
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+              onChange={(theme) => set({ theme })}
+            />
+          </Row>
+          <Row label="Text size">
+            <input
+              type="range"
+              aria-label="Text size"
+              min={0.75}
+              max={1.5}
+              step={0.05}
+              value={s.fontScale}
+              onChange={(e) => set({ fontScale: Number(e.target.value) })}
+              className="w-52 accent-[var(--accent)]"
+            />
+          </Row>
+        </Group>
+
+        <Group
+          title="Project"
+          footer={
+            <>
+              OSC examples: <code>/global/play</code>, <code>/setlist/jumpBySongs 1</code>, <code>/loop/toggle</code>, <code>/mixer/group VOX mute</code>. Send{' '}
+              <code>/subscribe &lt;port&gt;</code> to receive state.
+            </>
+          }
         >
-          Add mapping
-        </Button>
-      </Section>
+          <Row label="OSC port" hint="Restart Setlist after changing it.">
+            <input
+              type="number"
+              aria-label="OSC port"
+              defaultValue={s.oscPort}
+              onBlur={(e) => set({ oscPort: Number(e.target.value) || 39051 })}
+              className="min-h-9 w-24 rounded-xl bg-panel2 px-3 text-right text-fg outline-none tabular"
+            />
+          </Row>
+          <Row label="Project folder" hint="Lyrics images are read from the Lyrics folder inside it." stacked>
+            <TextInput
+              aria-label="Project folder"
+              defaultValue={s.projectFolder ?? ''}
+              placeholder="C:\Music\My Show"
+              onBlur={(e) => set({ projectFolder: e.target.value.trim() || null })}
+            />
+          </Row>
+          <button
+            type="button"
+            className="min-h-14 w-full px-5 text-left text-[17px] text-link hover:bg-panel2"
+            title="Section clips can only be jumped to while stopped unless they have a locator"
+            onClick={() => act('placeSectionLocators')}
+          >
+            Place locators on section clips
+          </button>
+          <button type="button" className="min-h-14 w-full px-5 text-left text-[17px] text-link hover:bg-panel2" onClick={() => act('removeAutoLocators')}>
+            Remove placed locators
+          </button>
+        </Group>
 
-      <Section title="OSC">
-        <div className="flex items-center justify-between gap-4 py-2">
-          <span>
-            <span className="block">OSC port</span>
-            <span className="block text-xs text-muted">Restart Setlist after changing</span>
-          </span>
-          <input type="number" defaultValue={s.oscPort} onBlur={(e) => set({ oscPort: Number(e.target.value) || 39051 })} className="w-24 rounded-lg border border-line bg-panel2 px-2 py-1" />
-        </div>
-        <p className="text-xs text-muted">
-          e.g. <code>/global/play</code>, <code>/setlist/jumpBySongs 1</code>, <code>/sections/next</code>, <code>/loop/toggle</code>,{' '}
-          <code>/mixer/group VOX mute</code>, <code>/notify/big all "Hello"</code>. Send <code>/subscribe &lt;port&gt;</code> to receive state.
-        </p>
-      </Section>
-
-      <Section title="Project">
-        <label className="block text-sm">Project folder (for lyrics images in &lt;folder&gt;/Lyrics)</label>
-        <TextInput className="mt-1" defaultValue={s.projectFolder ?? ''} placeholder="C:\Music\My Show Project" onBlur={(e) => set({ projectFolder: e.target.value.trim() || null })} />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => act('placeSectionLocators')} title="Section clips can only be jumped to while stopped unless they have a locator">Place locators on section clips</Button>
-          <Button onClick={() => act('removeAutoLocators')}>Remove placed locators</Button>
-        </div>
-      </Section>
-
-      {state.errors.length > 0 && (
-        <Section title="Remote Script errors">
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-danger">{state.errors.join('\n\n')}</pre>
-          <Button className="mt-2" onClick={() => act('clearErrors')}>Clear</Button>
-        </Section>
-      )}
+        {state.errors.length > 0 && (
+          <Group title="Remote Script errors">
+            <pre className="m-0 max-h-64 overflow-auto px-5 py-4 text-xs whitespace-pre-wrap text-danger">{state.errors.join('\n\n')}</pre>
+            <button type="button" className="min-h-14 w-full px-5 text-left text-[17px] text-link hover:bg-panel2" onClick={() => act('clearErrors')}>
+              Clear errors
+            </button>
+          </Group>
+        )}
+      </div>
     </div>
   );
 }
