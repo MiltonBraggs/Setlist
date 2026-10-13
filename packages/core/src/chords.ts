@@ -114,8 +114,3 @@ export function chordBars(events: ChordEvent[], from: Beats, to: Beats, sigNum: 
   }
   return bars;
 }
-
-/** Title of a chord track's chart tab on the Lyrics page; " chart" is added if a lyrics track has the same title. */
-export function chartTitle(chordTrack: ChordTrack, lyricsTitles: string[]): string {
-  return lyricsTitles.includes(chordTrack.title) ? `${chordTrack.title} chart` : chordTrack.title;
-}

@@ -15,10 +15,16 @@ try:
 except ImportError:  # pragma: no cover - future Live versions
     from ableton.v2.control_surface import ControlSurface
 
+from .build import script_build
 from .engine import JumpEngine
 from .net import UdpLink
 
 VERSION = "0.1.0"
+try:
+    # Lets the app warn when Live runs an old copy of this script.
+    BUILD = script_build()
+except Exception:  # pragma: no cover - never stop the script loading over this
+    BUILD = None
 TIME_INTERVAL = 1.0 / 30  # max rate of playhead messages
 CUE_EPS = 1e-3
 
@@ -130,7 +136,7 @@ class SetlistSurface(ControlSurface):
         self._add_song_listeners()
         self._rebuild_cue_listeners()
         self._rebuild_track_listeners()
-        self._send({"type": "hello", "version": VERSION})
+        self._send({"type": "hello", "version": VERSION, "build": BUILD})
         self._send({"type": "snapshot", "state": self._snapshot()})
         self.log_message("Setlist remote script %s loaded" % VERSION)
 
@@ -352,7 +358,7 @@ class SetlistSurface(ControlSurface):
         if kind == "ping":
             self._send({"type": "pong"})
         elif kind == "getSnapshot":
-            self._send({"type": "hello", "version": VERSION})
+            self._send({"type": "hello", "version": VERSION, "build": BUILD})
             self._send({"type": "snapshot", "state": self._snapshot()})
         elif kind == "plan":
             self._engine.set_plan(message["plan"])

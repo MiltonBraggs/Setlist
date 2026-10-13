@@ -131,6 +131,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
   private pluginHub: PluginHub | null = null;
   /** Executes custom OSC strings (wired up by the OSC service). */
   oscExec: (commands: string) => void = () => {};
+  /** Fingerprint of remote-script/Setlist in this checkout; null skips the outdated-script check. */
+  expectedScriptBuild: string | null = null;
 
   constructor(
     private bridge: LiveBridge,
@@ -140,6 +142,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     this.state = {
       liveConnected: false,
       scriptVersion: null,
+      scriptOutdated: false,
       live: EMPTY_LIVE,
       tracks: [],
       cues: [],
@@ -166,7 +169,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     });
     bridge.on('connected', (c) => {
       this.set({ liveConnected: c });
-      if (!c) this.set({ queued: null });
+      if (!c) this.set({ queued: null, scriptOutdated: false });
     });
   }
 
@@ -180,7 +183,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
   private onScriptMessage(msg: ScriptToServer) {
     switch (msg.type) {
       case 'hello':
-        this.set({ scriptVersion: msg.version });
+        this.set({ scriptVersion: msg.version, scriptOutdated: !!this.expectedScriptBuild && msg.build !== this.expectedScriptBuild });
         break;
       case 'snapshot': {
         const { time, isPlaying, tracks, cues, ...live } = msg.state;

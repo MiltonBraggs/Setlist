@@ -9,10 +9,11 @@
   },
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts --port 3000",
+    "prestart": "npm --prefix ../web run build",
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@fastify/static": "^8.0.0",
+    "@fastify/static": "^10.1.6",
     "@fastify/websocket": "^11.0.0",
     "@setlist/core": "*",
     "bonjour-service": "^1.3.0",

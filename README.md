@@ -32,25 +32,36 @@ whatever the network latency.
 
 ## Getting started
 
+Needs Node.js 22.12 or newer (Python only for the tests and the simulator).
+
 ```bash
 npm install
-npm run build -w @setlist/web
 ```
 
-**1. Install the Remote Script.** Copy `remote-script/Setlist` to
-`Documents\Ableton\User Library\Remote Scripts\Setlist` (macOS: `~/Music/Ableton/User Library/Remote Scripts/Setlist`).
-Restart Live, then choose **Setlist** as a Control Surface under *Preferences → Link, Tempo & MIDI*, with Input and Output set to None.
-After pulling a new version of Setlist, copy the folder again and restart Live, because the script runs inside Live.
-Setlist always starts playback from the position the UI shows (the parked next song after a `STOP`), not from
-Live's start marker, so an old copy of the script is the usual cause of GO starting somewhere unexpected.
+**1. Install the Remote Script** on the computer running Live:
+
+```bash
+npm run install-script
+```
+
+It finds Live's User Library (including one moved in *Preferences → Library*, or Documents inside OneDrive) and
+copies `remote-script/Setlist` into its `Remote Scripts` folder. If it can't find it, pass the path:
+`npm run install-script -- "D:\Music\User Library"`. Restart Live, then choose **Setlist** as a Control Surface under
+*Preferences → Link, Tempo & MIDI*, with Input and Output set to None.
+
+**After every `git pull`, run `npm run install-script` again and restart Live.** The script runs inside Live, so
+pulling the repo doesn't update it. When Live runs an old copy, the owner sees an orange banner and the server prints
+a warning, because an old script silently breaks newer features: chords from a `+CHORDS` track, part notes, and GO
+starting from the song the UI shows.
 
 **2. Run the server.**
 
 ```bash
-npm start -w @setlist/server
+npm start
 ```
 
-Open the printed URL (port 80, or 3000+ if 80 is taken) on any device on the same network.
+This builds the web page first, so phones always get the version you pulled. Open the printed URL (port 80, or
+3000+ if 80 is taken) on any device on the same network.
 
 ### Development
 
@@ -157,9 +168,13 @@ Mix both styles freely: one clip per chord with any length you like, or one clip
   show as rows of bars, aligned to the section's bar grid.
 - **Chords:** a full chord chart per section, four bars to a row (two on phones). Held chords are dimmed, the chord
   playing now is highlighted, and tapping a chord jumps there.
-- The `+CHORDS` track is also its own tab on the Lyrics page (a chord chart, for players who don't need the words).
-  If a lyrics track has the same name, the tab is called "… chart".
-- Songs that already have inline `[C]hords` in their lyric clips keep using them, so you can move over song by song.
+- With a `+CHORDS` track, every lyrics tab gets the **Lyrics / Lyrics + Chords / Chords** toggle (on phones the
+  middle option reads *Both*). Each device remembers its choice. A set with no `+LYRICS` track shows the `+CHORDS`
+  track as its own chord-chart tab.
+- Lyric lines that already have inline `[C]hords` keep them; every other line takes its chords from the `+CHORDS`
+  track, so you can move over gradually.
+- When a song shows no chords, the owner sees why under the toolbar: an old Remote Script in Live, a `+CHORDS` track
+  with no clips in the Arrangement (clips in Session View aren't read), or no chord clips in that song yet.
 - `[+2]` on the `+CHORDS` track name transposes it; the song's own transpose applies on top.
 
 ### Part notes

@@ -11,7 +11,8 @@ export const SCRIPT_PORT = 39100; // script listens
 export const SERVER_PORT = 39101; // server listens
 
 export type ScriptToServer =
-  | { type: 'hello'; version: string }
+  /** `build`: fingerprint of the script's files (absent in copies older than the check). */
+  | { type: 'hello'; version: string; build?: string | null }
   | { type: 'snapshot'; state: LiveSnapshot }
   | { type: 'patch'; state: Partial<LiveSnapshot> }
   | { type: 'time'; time: Beats; playing: boolean }
@@ -93,6 +94,8 @@ export interface Notification {
 export interface AppState {
   liveConnected: boolean;
   scriptVersion: string | null;
+  /** Live runs a different copy of the Remote Script than this Setlist checkout: copy it again and restart Live. */
+  scriptOutdated: boolean;
   /** Transport state. Tracks and cues are separate keys so transport changes stay small. */
   live: Omit<LiveSnapshot, 'time' | 'isPlaying' | 'tracks' | 'cues'>;
   tracks: LiveSnapshot['tracks'];

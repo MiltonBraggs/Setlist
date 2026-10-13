@@ -12,6 +12,7 @@ import { LiveBridge } from './bridge.ts';
 import { MidiService } from './midi.ts';
 import { OscService } from './osc.ts';
 import { PluginHub } from './plugins.ts';
+import { scriptBuild } from './scriptBuild.ts';
 import { Storage } from './storage.ts';
 
 export { SetlistApp } from './app.ts';
@@ -25,6 +26,8 @@ export interface ServerOptions {
   /** Built web UI to serve (packages/web/dist). */
   webDist?: string | null;
   mdns?: boolean;
+  /** remote-script/Setlist in this checkout: Live's copy is compared with it. */
+  remoteScriptDir?: string;
 }
 
 export interface RunningServer {
@@ -49,6 +52,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const storage = new Storage(options.dataDir);
   const bridge = new LiveBridge();
   const app = new SetlistApp(bridge, storage);
+  app.expectedScriptBuild = options.remoteScriptDir ? scriptBuild(options.remoteScriptDir) : null;
   const oscService = new OscService(app, app.state.settings.oscPort);
   app.oscExec = (text) => void oscService.exec(text);
   const midi = new MidiService(

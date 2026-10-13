@@ -251,3 +251,27 @@ describe('transport', () => {
     expect(() => app.dispatch('__proto__')).not.toThrow();
   });
 });
+
+describe('Remote Script version check', () => {
+  it('flags a copy in Live that differs from this checkout, and clears it on disconnect', () => {
+    app.expectedScriptBuild = 'abc123';
+    bridge.fromScript({ type: 'hello', version: '0.1.0', build: 'abc123' });
+    expect(app.state.scriptOutdated).toBe(false);
+    bridge.fromScript({ type: 'hello', version: '0.1.0', build: 'old999' });
+    expect(app.state.scriptOutdated).toBe(true);
+    bridge.emit('connected', false);
+    expect(app.state.scriptOutdated).toBe(false);
+  });
+
+  it('flags copies from before the check, which send no build', () => {
+    app.expectedScriptBuild = 'abc123';
+    bridge.fromScript({ type: 'hello', version: '0.1.0' });
+    expect(app.state.scriptOutdated).toBe(true);
+  });
+
+  it('skips the check when the checkout has no Remote Script', () => {
+    app.expectedScriptBuild = null;
+    bridge.fromScript({ type: 'hello', version: '0.1.0' });
+    expect(app.state.scriptOutdated).toBe(false);
+  });
+});

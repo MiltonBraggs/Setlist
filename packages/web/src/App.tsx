@@ -158,6 +158,12 @@ export function App() {
           Waiting for Ableton Live. Choose <b className="text-fg">Setlist</b> as a Control Surface in Live’s preferences.
         </div>
       )}
+      {access.isOwner && state.liveConnected && state.scriptOutdated && (
+        <div role="alert" className="no-print bg-[#ff9f0a] px-4 py-2 text-center text-sm font-medium text-black">
+          Live is running an old copy of the Setlist Remote Script, so newer features (chords, notes, playback fixes) won’t work. Run{' '}
+          <code className="font-semibold">npm run install-script</code> on the Live computer, then restart Live.
+        </div>
+      )}
       {access.isOwner && state.errors.length > 0 && current !== 'settings' && (
         <div className="no-print bg-panel px-4 py-2 text-center text-sm">
           The Remote Script reported an error.{' '}

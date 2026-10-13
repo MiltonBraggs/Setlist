@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { chartTitle, chordTracks, lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
+import { chordTracks, lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
 import { act, actThrottled, useStore } from '../store.ts';
 import { PinDialog } from '../components/Access.tsx';
 import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
@@ -51,7 +51,8 @@ function ViewerAccess() {
   const [pinOpen, setPinOpen] = useState(false);
   const set = (patch: Partial<ViewerPermissions>) => act('updateSettings', { viewer: { ...viewer, ...patch } });
   const lyricsOnly = lyricsTracks(state.tracks).map((t) => t.title);
-  const lyricTitles = [...new Set([...lyricsOnly, ...chordTracks(state.tracks).map((c) => chartTitle(c, lyricsOnly))])];
+  // Same tabs as the Lyrics page: the +CHORDS track only has its own tab when there are no lyrics tracks.
+  const lyricTitles = [...new Set(lyricsOnly.length ? lyricsOnly : chordTracks(state.tracks).map((c) => c.title))];
   const allowedLyrics = viewer.lyricsTracks ?? lyricTitles;
   const { pinSet, owners, viewers } = state.access;
 
@@ -175,7 +176,9 @@ export function SettingsView() {
           <Row label="Ableton Live">
             <span className="inline-flex items-center gap-2 text-[15px] text-muted">
               <span className={`h-2 w-2 rounded-full ${state.liveConnected ? 'bg-ok' : 'bg-danger'}`} />
-              {state.liveConnected ? `Connected · script ${state.scriptVersion ?? ''}` : 'Not connected'}
+              {state.liveConnected
+                ? `Connected · script ${state.scriptVersion ?? ''}${state.scriptOutdated ? ' · out of date: run npm run install-script, then restart Live' : ''}`
+                : 'Not connected'}
             </span>
           </Row>
           <Row label="Open on other devices" hint={state.urls.length > 2 ? state.urls.slice(1).join(' · ') : undefined}>

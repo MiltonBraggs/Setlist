@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activeLineIndex,
   activeOrder,
-  chartTitle,
   chordAt,
   chordBars,
   chordTracks,
@@ -33,9 +32,17 @@ import { Button, Segmented, colorOf } from '../components/ui.tsx';
 
 type ChordMode = 'show' | 'hide' | 'only';
 
-const CHORD_MODES: { value: ChordMode; label: string }[] = [
+const CHORD_MODES: { value: ChordMode; label: React.ReactNode }[] = [
   { value: 'hide', label: 'Lyrics' },
-  { value: 'show', label: 'Lyrics + Chords' },
+  {
+    value: 'show',
+    label: (
+      <>
+        <span className="sm:hidden">Both</span>
+        <span className="max-sm:hidden">Lyrics + Chords</span>
+      </>
+    ),
+  },
   { value: 'only', label: 'Chords' },
 ];
 
@@ -364,18 +371,14 @@ export function Lyrics() {
   const time = usePlayhead();
   const access = useAccess();
   const chordTrackList = useMemo(() => chordTracks(state.tracks), [state.tracks]);
+  // With lyrics tracks, the +CHORDS track feeds their Lyrics / Lyrics + Chords / Chords toggle.
+  // Without any, it is shown on its own as a chord chart.
   const allTracks = useMemo<Tab[]>(() => {
     const lyrics = lyricsTracks(state.tracks).map((t) => ({ ...t, chart: false }));
-    const charts = chordTrackList.map((c) => ({
-      id: c.id,
-      title: chartTitle(c, lyrics.map((t) => t.title)),
-      options: parseLyricsOptions(c.attrs, c),
-      lines: [],
-      chart: true,
-    }));
-    return [...lyrics, ...charts];
+    if (lyrics.length) return lyrics;
+    return chordTrackList.map((c) => ({ id: c.id, title: c.title, options: parseLyricsOptions(c.attrs, c), lines: [], chart: true }));
   }, [state.tracks, chordTrackList]);
-  // The first +CHORDS track also supplies chords to lyrics tracks that have none inline.
+  // The first +CHORDS track supplies chords to lyric lines that have no inline [C]hords.
   // Its own [+2] transposes them; the song's and the lyrics track's transpose apply on top.
   const chordEvents = useMemo(() => {
     const source = chordTrackList[0];
@@ -392,13 +395,25 @@ export function Lyrics() {
   const [pinned, setPinned] = useState<number | null>(null);
   const track = tracks.find((t) => t.title === trackTitle) ?? tracks[0];
   const inlineChords = !!track?.lines.some(hasInlineChords);
-  // Chords from the +CHORDS track, used for every song whose lyric lines have no [C]hords of their own.
   const events = track ? chordEvents : [];
-  const hasChords = !!track && !track.chart && (inlineChords || events.length > 0);
+  // The toggle shows whenever the set has chords, even while a +CHORDS track is still empty.
+  const hasChords = !!track && !track.chart && (inlineChords || chordTrackList.length > 0);
   const chordMode: ChordMode = !track ? 'show' : track.chart ? 'only' : hasChords ? (modes[track.title] ?? track.options.chords) : 'hide';
   const { sigNum, sigDen } = state.live;
   const loc = locate(state.songs, time);
   const song = state.songs[loc.songIndex];
+  // Why a song shows no chords: the owner gets the likely cause, viewers a plain note.
+  const songHasChords = !!song && !!track && (chordsBetween(events, song.start, song.end).length > 0 || linesForSong(track, song).some(hasInlineChords));
+  const chordHint =
+    !track || !song || chordMode === 'hide' || songHasChords
+      ? null
+      : !access.isOwner
+        ? 'No chords for this song yet.'
+        : state.scriptOutdated
+          ? 'Live is running an old copy of the Setlist Remote Script, so chords can’t come through. Run npm run install-script, then restart Live.'
+          : chordTrackList.length > 0 && chordEvents.length === 0
+            ? `The “${chordTrackList[0].title}” +CHORDS track has no clips in Live’s Arrangement. Clips in Session View aren’t read.`
+            : 'No chords for this song yet. Add clips named like C-G-Am-F to the +CHORDS track.';
 
   const songsToShow = useMemo(() => {
     if (!track) return [];
@@ -419,8 +434,7 @@ export function Lyrics() {
       if (track.options.allSongs) items.push({ kind: 'songTitle', song: s });
       const songItems: Item[] = [];
       const allLines = linesForSong(track, s);
-      // Inline [C]hords win for a song; otherwise its chords come from the +CHORDS track.
-      const songChords = chordMode === 'hide' || allLines.some(hasInlineChords) ? [] : chordsBetween(events, s.start, s.end);
+      const songChords = chordMode === 'hide' ? [] : chordsBetween(events, s.start, s.end);
       // "Chords" with track chords is a chord chart: the lyric lines are left out.
       const songLines = chordMode === 'only' && songChords.length > 0 ? [] : allLines;
       const headers = track.options.noSections ? [] : [...s.sections];
@@ -429,8 +443,10 @@ export function Lyrics() {
       const byLine = new Map<string, ChordEvent[]>();
       for (const c of songChords) {
         const line = songLines.find((l) => c.start >= l.start - PICKUP - 1e-6 && c.start < l.end - 1e-6);
-        if (line) byLine.set(line.id, [...(byLine.get(line.id) ?? []), c]);
-        else free.push(c);
+        // A line with its own inline [C]hords keeps them.
+        if (line) {
+          if (!hasInlineChords(line)) byLine.set(line.id, [...(byLine.get(line.id) ?? []), c]);
+        } else free.push(c);
       }
       for (const line of songLines) {
         while (headers.length && headers[0].start <= line.start + 1e-6 && !(line.position === 'before' && Math.abs(headers[0].start - line.start) < 1e-6)) {
@@ -556,7 +572,8 @@ export function Lyrics() {
   return (
     <div className="flex h-full flex-col bg-panel">
       {/* One row; scrolls sideways on narrow phones instead of eating the lyrics' height. */}
-      <div className="no-print mx-auto flex w-full max-w-[980px] items-center gap-2 overflow-x-auto px-4 pt-3 [scrollbar-width:none] sm:gap-3 sm:px-6 sm:pt-4">
+      {/* Wraps on phones so every option stays visible: tabs and A−/A+ first, then the chord toggle and song. */}
+      <div className="no-print mx-auto flex w-full max-w-[980px] flex-wrap items-center gap-2 px-4 pt-3 sm:gap-3 sm:px-6 sm:pt-4">
         {tracks.length > 1 && (
           <Segmented
             label="Lyrics track"
@@ -566,21 +583,30 @@ export function Lyrics() {
             className="shrink-0 flex-nowrap"
           />
         )}
-        {hasChords && <Segmented label="Show" value={chordMode} options={CHORD_MODES} onChange={(m) => setModes({ ...modes, [track.title]: m })} className="shrink-0 flex-nowrap" />}
-        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted">{song?.title ?? 'Not in a song'}</p>
+        {hasChords && (
+          <Segmented
+            label="Show"
+            value={chordMode}
+            options={CHORD_MODES}
+            onChange={(m) => setModes({ ...modes, [track.title]: m })}
+            className="shrink-0 flex-nowrap max-sm:order-2"
+          />
+        )}
+        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted max-sm:order-3">{song?.title ?? 'Not in a song'}</p>
         {pinned !== null && (
-          <Button variant="ghost" onClick={() => setPinned(null)}>
+          <Button variant="ghost" className="max-sm:order-4" onClick={() => setPinned(null)}>
             Back to current
           </Button>
         )}
-        <Button variant="outline" className="!px-0 w-11 shrink-0" onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller text">
+        <Button variant="outline" className="!px-0 w-11 shrink-0 max-sm:order-1" onClick={() => setScale(Math.max(0.5, scale - 0.1))} title="Smaller text">
           A−
         </Button>
-        <Button variant="outline" className="!px-0 w-11 shrink-0 text-lg" onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger text">
+        <Button variant="outline" className="!px-0 w-11 shrink-0 text-lg max-sm:order-1" onClick={() => setScale(Math.min(3, scale + 0.1))} title="Larger text">
           A+
         </Button>
       </div>
       <NotesBanner time={time} song={song} section={song?.sections[loc.sectionIndex]} />
+      {chordHint && <p className="no-print mx-auto m-0 w-full max-w-[980px] px-4 pt-2 text-center text-[15px] text-muted sm:px-6">{chordHint}</p>}
       {/* Smaller base size on narrow screens so lines fit; A- / A+ scale it. */}
       <div ref={scrollerRef} className="flex-1 overflow-x-hidden overflow-y-auto px-4 sm:px-6" style={{ fontSize: `calc(clamp(1.5rem, 6.5vw, 2.5rem) * ${scale})` }}>
         <div className="mx-auto max-w-[980px]">

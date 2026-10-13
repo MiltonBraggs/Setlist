@@ -14,11 +14,18 @@ const port = portValue ? [Number(portValue)] : undefined;
 const server = await startServer({
   ports: port,
   webDist: path.resolve(here, '../../web/dist'),
+  remoteScriptDir: path.resolve(here, '../../../remote-script/Setlist'),
 });
 console.log(`Setlist server running:\n  ${server.urls.join('\n  ')}`);
 console.log('Waiting for Ableton Live (Setlist control surface)...');
 server.app.on('patch', (p) => {
   if ('liveConnected' in p) console.log(p.liveConnected ? 'Live connected' : 'Live disconnected');
+  if (p.scriptOutdated) {
+    console.warn(
+      'WARNING: Live is running an old copy of the Setlist Remote Script. Run `npm run install-script`\n' +
+        "(or copy remote-script/Setlist into Live's User Library → Remote Scripts), then restart Live.",
+    );
+  }
 });
 
 let closing = false;
