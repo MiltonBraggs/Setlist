@@ -56,10 +56,24 @@ class JumpEngine(object):
 
     # ------------------------------------------------------------- commands
 
-    def play(self):
+    def _start_position(self, position):
+        """Where playback should start: a parked position still being held after a STOP wins,
+        then the position the app shows (sent by the server), then the current playhead."""
+        if self.relocate_after_stop is not None:
+            return self.relocate_after_stop
+        if position is not None:
+            return max(0.0, float(position))
+        return self.live.time()
+
+    def play(self, position=None):
+        # Never song.start_playing(): Live starts that from its *start marker* (wherever playback
+        # was last started or clicked), not from where we parked the playhead. Set the position
+        # explicitly and continue from it.
+        start = self._start_position(position)
         self.relocate_after_stop = None
-        self.last_time = self.live.time()
-        self.live.start_playing()
+        self.live.set_time(start)
+        self.last_time = start
+        self.live.continue_playing()
 
     def resume(self):
         self.relocate_after_stop = None
@@ -113,14 +127,15 @@ class JumpEngine(object):
         self.escaped_loop = None
 
     def start_count_in(self, target, bars, on_done):
+        target = self._start_position(target)
         num, den = self.live.signature()
         start = max(0.0, target - bars * num * 4.0 / den)
         self.cancel_queue()
-        self._relocate(start)
-        self.count_in = {"target": target, "done": on_done}
         self.relocate_after_stop = None
+        self.live.set_time(start)
+        self.count_in = {"target": target, "done": on_done}
         self.last_time = start
-        self.live.start_playing()
+        self.live.continue_playing()  # not start_playing(): see play()
 
     # --------------------------------------------------------------- updates
 

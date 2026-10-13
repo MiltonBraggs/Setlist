@@ -265,3 +265,26 @@ export function formatDuration(seconds: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
+
+/** A section's length in whole bars (at least 1). */
+export function sectionBars(section: { start: Beats; end: Beats }, sigNum: number, sigDen: number): number {
+  return Math.max(1, Math.round((section.end - section.start) / beatsPerBar(sigNum, sigDen)));
+}
+
+/**
+ * Time from `time` to `target`, for countdowns: whole bars left, and beats left once in the last bar.
+ * E.g. 9 beats in 4/4 -> { bars: 3, beats: 9 }; 3 beats -> { bars: 1, beats: 3 }.
+ */
+export function barsUntil(time: Beats, target: Beats, sigNum: number, sigDen: number): { bars: number; beats: number } {
+  const beatLen = 4 / sigDen;
+  const left = Math.max(0, target - time);
+  return { bars: Math.ceil(left / beatsPerBar(sigNum, sigDen) - EPS), beats: Math.ceil(left / beatLen - EPS) };
+}
+
+/** "in 4 bars", "in 3 beats", "now". */
+export function countdownLabel(time: Beats, target: Beats, sigNum: number, sigDen: number): string {
+  const { bars, beats } = barsUntil(time, target, sigNum, sigDen);
+  if (beats <= 0) return 'now';
+  if (bars <= 1) return beats === 1 ? 'in 1 beat' : `in ${beats} beats`;
+  return `in ${bars} bars`;
+}

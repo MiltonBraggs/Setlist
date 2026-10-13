@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { applyMixerUpdate, can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
+import { can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
 
 interface Store {
   connected: boolean;
@@ -9,7 +9,6 @@ interface Store {
   time: number;
   playing: boolean;
   receivedAt: number;
-  meters: Map<string, [number, number]>;
   /** null until the server has answered this device's hello. */
   role: Role | null;
   /** Last sign-in / PIN error, shown in the dialog. */
@@ -22,7 +21,6 @@ export const useStore = create<Store>(() => ({
   time: 0,
   playing: false,
   receivedAt: performance.now(),
-  meters: new Map(),
   role: null,
   authError: null,
 }));
@@ -47,7 +45,6 @@ function writeToken(token: string | undefined) {
 }
 
 let socket: WebSocket | null = null;
-let metersWanted = 0;
 
 function send(msg: ClientToServer) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
@@ -85,7 +82,6 @@ export function connect() {
   socket.onopen = () => {
     useStore.setState({ connected: true });
     send({ type: 'hello', token: readToken() });
-    if (metersWanted > 0) send({ type: 'meters', enabled: true });
   };
   socket.onclose = () => {
     useStore.setState({ connected: false });
@@ -102,12 +98,6 @@ export function connect() {
         break;
       case 'time':
         useStore.setState({ time: msg.time, playing: msg.playing, receivedAt: performance.now() });
-        break;
-      case 'meters':
-        useStore.setState({ meters: new Map(msg.levels.map(([id, l, r]) => [id, [l, r]])) });
-        break;
-      case 'mixer':
-        useStore.setState((s) => (s.state ? { state: { ...s.state, tracks: applyMixerUpdate(s.state.tracks, msg.tracks) } } : {}));
         break;
       case 'session':
         if (msg.session.token !== undefined) writeToken(msg.session.token || undefined);
@@ -147,17 +137,6 @@ export function useAccess() {
     canSee: (page: PageId) => !!perms && canSeePage(role, p, page),
     canSeeLyrics: (title: string) => !!perms && canSeeLyricsTrack(role, p, title),
   };
-}
-
-/** Subscribe to meter updates while a component is mounted. */
-export function useMeters() {
-  useEffect(() => {
-    if (metersWanted++ === 0) send({ type: 'meters', enabled: true });
-    return () => {
-      if (--metersWanted === 0) send({ type: 'meters', enabled: false });
-    };
-  }, []);
-  return useStore((s) => s.meters);
 }
 
 /** Playhead extrapolated between reports (Live sends ~10-30/s). */

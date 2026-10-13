@@ -138,6 +138,8 @@ export function songByOffset(ctx: NavContext, offset: number): Song | undefined 
     // Parked after a song: "previous" means the song that just ended.
     pos += 1;
   }
+  // Past the end of the setlist there is no next song: never wrap or restart the last one.
+  if (offset > 0 && pos + offset >= ctx.order.length) return undefined;
   const target = Math.max(0, Math.min(ctx.order.length - 1, pos + offset));
   return byId.get(ctx.order[target]);
 }

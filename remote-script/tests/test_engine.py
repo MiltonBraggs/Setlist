@@ -112,6 +112,32 @@ class LateResetLive(FakeLive):
         FakeLive.advance(self)
 
 
+class StartMarkerLive(FakeLive):
+    """Real Live's transport: start_playing() plays from the *start marker* (set by clicking in
+    the arrangement), which setting current_song_time through the API does not move.
+    continue_playing() plays from the current position. Stopping returns to the start marker."""
+
+    def __init__(self, *a, **kw):
+        FakeLive.__init__(self, *a, **kw)
+        self.start_marker = 0.0
+
+    def click(self, t):
+        """The user clicks in Live's arrangement."""
+        self.start_marker = t
+        self.t = t
+
+    def start_playing(self):
+        self.t = self.start_marker
+        self.playing = True
+
+    def continue_playing(self):
+        self.playing = True
+
+    def stop_playing(self):
+        FakeLive.stop_playing(self)
+        self.t = self.start_marker
+
+
 def run(engine, live, ticks):
     for _ in range(ticks):
         was = live.playing
@@ -194,6 +220,46 @@ class EngineTests(unittest.TestCase):
         run(engine, live, 3)
         self.assertTrue(live.playing)
         self.assertLess(live.t, 2, "playback starts at the next setlist song")
+
+    def test_play_after_stop_starts_the_parked_song_not_lives_start_marker(self):
+        # Setlist "B then A": B (16..32) ends with STOP -> park at A (0). The user had started B
+        # by clicking at 20 in Live, so Live's start marker is at 20.
+        live = StartMarkerLive([0, 16, 32], step=0.2)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        engine.set_plan({"events": [{"at": 32, "type": "stop", "relocate": 0}], "loops": []})
+        live.click(20.0)
+        engine.play()
+        run(engine, live, 80)  # stop at 32, then the hold window passes
+        self.assertFalse(live.playing)
+        self.assertEqual(live.t, 0, "parked at A")
+        engine.play(0.0)  # GO: the app shows A, so it sends A's position
+        run(engine, live, 3)
+        self.assertTrue(live.playing)
+        self.assertLess(live.t, 2, "A plays, not B from Live's start marker (20)")
+
+    def test_play_pressed_during_the_park_hold_uses_the_parked_position(self):
+        live = StartMarkerLive([0, 16, 32], step=0.2)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        engine.set_plan({"events": [{"at": 32, "type": "stop", "relocate": 0}], "loops": []})
+        live.click(20.0)
+        engine.play()
+        run(engine, live, 61)  # just past the stop at 32
+        self.assertFalse(live.playing)
+        engine.play(20.0)  # the app may still show a stale position for a moment
+        run(engine, live, 2)
+        self.assertTrue(live.playing)
+        self.assertLess(live.t, 2)
+
+    def test_count_in_starts_before_the_given_position_not_at_the_start_marker(self):
+        live = StartMarkerLive([0, 16], step=0.2)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        live.click(40.0)
+        done = []
+        engine.start_count_in(16, 1, lambda: done.append(live.t))
+        self.assertTrue(live.playing)
+        self.assertEqual(live.t, 12)
+        run(engine, live, 30)
+        self.assertEqual(len(done), 1)
 
     def test_restart_from_stop_point_does_not_refire(self):
         live, engine, _ = make([0, 16], {"events": [{"at": 16, "type": "stop", "relocate": None}], "loops": []})

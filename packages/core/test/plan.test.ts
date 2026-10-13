@@ -49,6 +49,12 @@ describe('navigation', () => {
     expect(songByOffset({ songs, order: ['closer', 'opener', 'ballad'], time: 20 }, -1)?.id).toBe('closer');
   });
 
+  it('has no next song after the last one in the setlist', () => {
+    expect(songByOffset({ songs, order, time: 200 }, 1)).toBeUndefined(); // in Closer, the last song
+    expect(songByOffset({ songs, order: ['closer', 'opener'], time: 20 }, 1)).toBeUndefined();
+    expect(songByOffset({ songs, order, time: 200 }, -1)?.id).toBe('ballad');
+  });
+
   it('treats a parked playhead as after the finished song', () => {
     // Parked at Ballad's STOP locator (160), outside any song.
     expect(songByOffset({ songs, order, time: 160 }, 1)?.id).toBe('closer');

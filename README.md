@@ -2,7 +2,7 @@
 
 Setlist and performance control for Ableton Live 12, modelled on [AbleSet](https://ableset.com/docs/all).
 It reads the locators in your Arrangement as songs and sections and gives every phone, tablet or
-laptop on your network a performance view, setlist editor, synced lyrics and a mixer. It also handles quantized
+laptop on your network a performance view, setlist editor and synced lyrics and chords. It also handles quantized
 and queued jumps, loops, MIDI and OSC control.
 
 ## How it works
@@ -26,7 +26,7 @@ whatever the network latency.
 | `remote-script/simulator/` | Runs the real Remote Script against a fake Live, so you can develop without Ableton |
 | `packages/core/` | Locator notation parser, song builder, playback plan, setlists, lyrics (shared TS) |
 | `packages/server/` | Live bridge, app state and actions, storage, MIDI, OSC, HTTP/WebSocket |
-| `packages/web/` | React UI: Performance, Setlist, Lyrics, Mixer, Settings |
+| `packages/web/` | React UI: Performance, Setlist, Lyrics, Settings |
 | `apps/desktop/` | *On hold.* Electron tray app (not built or installed) |
 | `plugin/` | *On hold.* "Setlist Sync" VST3/AU for exact stops, see [plugin/README.md](plugin/README.md). The server only talks to it with `SETLIST_PLUGINS=1` |
 
@@ -41,6 +41,8 @@ npm run build -w @setlist/web
 `Documents\Ableton\User Library\Remote Scripts\Setlist` (macOS: `~/Music/Ableton/User Library/Remote Scripts/Setlist`).
 Restart Live, then choose **Setlist** as a Control Surface under *Preferences → Link, Tempo & MIDI*, with Input and Output set to None.
 After pulling a new version of Setlist, copy the folder again and restart Live, because the script runs inside Live.
+Setlist always starts playback from the position the UI shows (the parked next song after a `STOP`), not from
+Live's start marker, so an old copy of the script is the usual cause of GO starting somewhere unexpected.
 
 **2. Run the server.**
 
@@ -86,9 +88,9 @@ Until you set an **owner PIN** (*Settings → Owner and bandmates*), every devic
 
 The owner decides, for all viewers at once:
 
-- **Pages:** Performance, Setlist, Lyrics and Mixer. Settings is always owner-only.
+- **Pages:** Performance, Setlist and Lyrics. Settings is always owner-only.
 - **Lyrics tracks:** which `+LYRICS` tracks viewers can open.
-- **Controls:** play, stop and GO; jumping to songs and sections; editing the setlist; the mixer.
+- **Controls:** play, stop and GO; jumping to songs and sections; editing the setlist.
 
 Permissions are enforced by the server, not just hidden in the UI.
 
@@ -117,7 +119,6 @@ Permissions are enforced by the server, not just hidden in the UI.
 Without a locator these can only be jumped to while stopped. *Settings → Place locators on section clips* fixes that.
 
 **Track flags:**
-- `+G:NAME` / `+GROUP:NAME`: mixer group.
 - `+GUIDE` / `+LOOPGUIDE` / `+JUMPGUIDE`: guide tracks that are muted and unmuted automatically.
 - `+NEVERMUTE` / `+NM`: never muted.
 - `Click` / `+CLICK`: soloed during count-in.
@@ -132,11 +133,34 @@ A MIDI track flagged `+LYRICS`, with one clip per line, named with the text:
 - **Line options:** `[red]` color, `[large|small|tiny]` size, `[left|center]` alignment, `[mono]`. `[<]` / `[>]` put the line before / after the section header.
 - **Chords:** ChordPro style, e.g. `[C]Neon [G]lights`.
 - **Images:** `[img:file.png] [full]` shows an image from `<project folder>/Lyrics/`.
-- **Track options:** `[top+2]`, `[nofade]`, `[nozoom]`, `[nosections]`, `[linemarker]`, `[progress]`, `[allsongs]`, `[+150ms]`, `[nochords]`, `[onlychords]`, `[chords:red]`, and `+CLIPCOLORS`.
+- **Track options:** `[top+2]`, `[nofade]` (don't mark the current line), `[nosections]`, `[linemarker]`, `[progress]`, `[allsongs]`, `[+150ms]`, `[nochords]`, `[onlychords]`, `[chords:red]`, and `+CLIPCOLORS`.
 
 **Several views.** Make one `+LYRICS` track per view, for example `Vocals +LYRICS`, `Chords +LYRICS [onlychords]` and
 `Harmony +LYRICS [blue]`. Each becomes a tab on the Lyrics page. If a track has chords, a *Lyrics / Lyrics + Chords / Chords*
 toggle appears. Its starting value comes from the track's `[nochords]` / `[onlychords]`, and each device remembers its own choice.
+
+### Chords track
+
+Writing `[C]` into every lyric clip is slow. Instead, add a MIDI track flagged `+CHORDS` (for example `Chords +CHORDS`)
+and name its clips after the chords:
+
+| Clip name | Result |
+|---|---|
+| `Am` | One chord for the whole clip |
+| `C-G-Am-F` | The clip is split evenly: in a 1-bar 4/4 clip, one chord per beat; in a 4-bar clip, one per bar |
+| `C--G-` | An empty slot holds the chord before it: C for 2 beats, then G for 2 beats |
+
+Mix both styles freely: one clip per chord with any length you like, or one clip per bar or phrase.
+
+- **Lyrics + Chords:** each chord appears over the word sung when it starts (placed by time within the lyric clip;
+  a chord up to a beat early counts as a pickup on the first word). Chords between lyric lines (intros, solos, endings)
+  show as rows of bars, aligned to the section's bar grid.
+- **Chords:** a full chord chart per section, four bars to a row (two on phones). Held chords are dimmed, the chord
+  playing now is highlighted, and tapping a chord jumps there.
+- The `+CHORDS` track is also its own tab on the Lyrics page (a chord chart, for players who don't need the words).
+  If a lyrics track has the same name, the tab is called "… chart".
+- Songs that already have inline `[C]hords` in their lyric clips keep using them, so you can move over song by song.
+- `[+2]` on the `+CHORDS` track name transposes it; the song's own transpose applies on top.
 
 ### Part notes
 
@@ -146,11 +170,20 @@ Instructions for one instrument (*Kick only*, *Full beat*) or for the whole band
 |---|---|
 | `Drums +NOTES`, `Keys +NOTES`, … | Devices that follow that part. Each device picks its parts under *Parts…* on the Performance page |
 | `Band +NOTES:ALL` | Every device, as an orange callout. It also appears 8 bars before it starts, with a countdown |
-| `> Bridge {STOP – only piano}` (section description) | Every device, while that section plays |
+| `> Bridge {STOP – only piano}` (section description) | Everyone, as a band cue: in orange beside the section on the Lyrics page, under the section name in the Performance *Now* card, and in the *Next* card before it starts |
 
 Each clip's name is the instruction, shown while the playhead is inside the clip, and `**bold**` and `[color]` work.
 The next instruction shows with a bar countdown, for example *Then Full beat · in 2 bars*. Notes appear on the
 Performance page and as a strip at the top of the Lyrics page.
+
+### Pages
+
+- **Performance** (owner, drummer): a tappable setlist on the left (tap a song to queue it, or to jump while stopped),
+  the song card, *Now* / *Next* with section cues and a bar countdown, and every section as a button. Long songs wrap
+  the section buttons onto more rows instead of shrinking them. Fits a 1280×650 laptop or an iPad without scrolling.
+- **Lyrics** (singers, band): each section header has its cue and a row of dots, one per bar (one per 2–8 bars in
+  very long sections), filled as the section plays, so you can see how much of it is left.
+- Each device reopens on the page it last used.
 
 ## Control
 
@@ -182,7 +215,7 @@ On Windows a MIDI port can only be opened by one app, so disable the device in L
 - Transport: `/global/play|pause|stop|playPause|go|toggleRecording`.
 - Setlist: `/setlist/jumpBySongs n`, `/setlist/jumpToSong name|index`, `/setlist/jumpBySections n`, `/setlist/jumpToSection name`, `/setlist/jumpToQueued[Now]`, `/setlist/cancelQueued`.
 - Sections and loops: `/sections/next|previous`, `/loop/toggle|enable|escape`.
-- Mixer and notifications: `/mixer/group NAME mute|unmute|toggleMute|solo|unsolo|toggleSolo|volume v`, `/notify/big all "text"`.
+- Notifications: `/notify/big all "text"`.
 - Subscriptions: send `/subscribe [host] port` to receive `/global/isPlaying`, `/setlist/activeSongName`, `/setlist/nextSongName`,
   `/setlist/activeSectionName`, `/setlist/songProgress`, `/setlist/setRemaining`, … (for example with Bitfocus Companion or Stream Deck).
 

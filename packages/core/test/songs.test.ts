@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSongs, formatDuration, locate } from '../src/songs.ts';
+import { barsUntil, buildSongs, countdownLabel, formatDuration, locate, sectionBars } from '../src/songs.ts';
 import { DEMO, snapshot, track } from './fixtures.ts';
 
 describe('buildSongs', () => {
@@ -74,5 +74,22 @@ describe('formatDuration', () => {
   it('formats', () => {
     expect(formatDuration(75)).toBe('1:15');
     expect(formatDuration(3723)).toBe('1:02:03');
+  });
+});
+
+describe('section bars and countdowns', () => {
+  it('counts bars in a section', () => {
+    expect(sectionBars({ start: 16, end: 48 }, 4, 4)).toBe(8);
+    expect(sectionBars({ start: 0, end: 18 }, 6, 8)).toBe(6); // 6/8: 3 beats per bar
+    expect(sectionBars({ start: 0, end: 1 }, 4, 4)).toBe(1);
+  });
+
+  it('counts down in bars, then beats', () => {
+    expect(countdownLabel(20, 48, 4, 4)).toBe('in 7 bars');
+    expect(countdownLabel(39, 48, 4, 4)).toBe('in 3 bars'); // 9 beats -> 2.25 bars -> 3
+    expect(countdownLabel(45, 48, 4, 4)).toBe('in 3 beats');
+    expect(countdownLabel(47, 48, 4, 4)).toBe('in 1 beat');
+    expect(countdownLabel(48, 48, 4, 4)).toBe('now');
+    expect(barsUntil(44.5, 48, 4, 4)).toEqual({ bars: 1, beats: 4 });
   });
 });

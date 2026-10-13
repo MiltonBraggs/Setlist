@@ -10,6 +10,7 @@ process over the same UDP protocol it uses with Live.
 
 import json
 import os
+import socket
 import sys
 import time
 
@@ -23,6 +24,8 @@ from fake_plugin import FakePlugin  # noqa: E402
 FRAME = 0.02      # playback resolution (s)
 DISPLAY = 0.1     # Live calls update_display about every 100 ms
 SPEED = float(os.environ.get("SIM_SPEED", "1"))  # >1 plays faster (for tests)
+# Test hook: send {"click": beats} to this UDP port to simulate clicking in Live's arrangement.
+DEBUG_PORT = 39199
 
 
 def main():
@@ -40,12 +43,23 @@ def main():
     plugin = FakePlugin(song) if "--plugin" in sys.argv else None
     print("Simulated Live running with %d locators, %d tracks. Ctrl+C to quit." % (len(song.cue_points), len(song.tracks)))
 
+    debug = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    debug.bind(("127.0.0.1", DEBUG_PORT))
+    debug.setblocking(False)
+
     last_display = time.time()
     last = time.time()
     try:
         while True:
             time.sleep(FRAME)
             now = time.time()
+            try:
+                data, _ = debug.recvfrom(1024)
+                msg = json.loads(data.decode("utf-8"))
+                if "click" in msg:
+                    song.click(msg["click"])
+            except (BlockingIOError, OSError, ValueError):
+                pass
             song.advance((now - last) * SPEED)
             if plugin:
                 plugin.frame(last, now)

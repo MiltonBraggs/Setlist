@@ -8,7 +8,6 @@ import {
   buildPlan,
   buildSongs,
   createSetlist,
-  groupDisplayName,
   jumpTiming,
   locate,
   loopAt,
@@ -60,7 +59,6 @@ export interface MidiEvent {
 interface AppEvents {
   patch: [Partial<AppState>];
   time: [number, boolean];
-  meters: [[string, number, number][]];
   mixer: [MixerUpdate];
   settings: [Settings];
 }
@@ -130,7 +128,6 @@ export class SetlistApp extends EventEmitter<AppEvents> {
   private settingsTimer?: NodeJS.Timeout;
   private tempoTimer?: NodeJS.Timeout;
   private lastLoopActive = false;
-  private meterClients = 0;
   private pluginHub: PluginHub | null = null;
   /** Executes custom OSC strings (wired up by the OSC service). */
   oscExec: (commands: string) => void = () => {};
@@ -214,8 +211,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
         if (this.state.plugins.length === 0) this.updateTime(msg.time, msg.playing);
         break;
       case 'meters':
-        this.emit('meters', msg.levels);
-        break;
+        break; // the mixer is disabled; meters are never requested
       case 'fired':
         if (msg.event === 'queued' || msg.event === 'stop') this.setQueued(null);
         break;
@@ -511,7 +507,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
         : [];
       this.bridge.command({ name: 'countIn', from: this.time, bars, clickTrackIds });
     } else {
-      this.bridge.command({ name: 'play' });
+      // Always say where: Live's own "play" would start from its start marker instead.
+      this.bridge.command({ name: 'play', from: this.time });
     }
   }
 
@@ -543,49 +540,6 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     if (!this.playing) this.updateTime(to, false);
   }
 
-  // ------------------------------------------------------------------ mixer
-
-  groups(): Map<string, string[]> {
-    const groups = new Map<string, string[]>();
-    for (const track of this.state.tracks) {
-      for (const g of parseTrackName(track.name).groups) {
-        if (!groups.has(g)) groups.set(g, []);
-        groups.get(g)!.push(track.id);
-      }
-    }
-    return groups;
-  }
-
-  private mixerGroup(group: string, op: string, value?: unknown) {
-    const ids = this.groups().get(group.toUpperCase().replace(/ /g, '_'));
-    if (!ids) return;
-    const tracks = this.state.tracks.filter((t) => ids.includes(t.id));
-    const anyMuted = tracks.some((t) => t.mute);
-    const anySolo = tracks.some((t) => t.solo);
-    for (const t of tracks) {
-      const neverMute = parseTrackName(t.name).neverMute;
-      switch (op) {
-        case 'mute':
-        case 'unmute':
-        case 'toggleMute': {
-          const mute = op === 'mute' || (op === 'toggleMute' && !anyMuted);
-          if (!(mute && neverMute)) this.bridge.command({ name: 'setTrack', id: t.id, mute });
-          break;
-        }
-        case 'solo':
-        case 'unsolo':
-        case 'toggleSolo':
-          this.bridge.command({ name: 'setTrack', id: t.id, solo: op === 'solo' || (op === 'toggleSolo' && !anySolo) });
-          break;
-        case 'volume': {
-          const v = Number(value);
-          if (Number.isFinite(v)) this.bridge.command({ name: 'setTrack', id: t.id, volume: Math.max(0, Math.min(1, v)) });
-          break;
-        }
-      }
-    }
-  }
-
   /** Mute/unmute +GUIDE / +LOOPGUIDE / +JUMPGUIDE tracks (edge-triggered, so manual changes stick). */
   private updateGuides() {
     const q = this.state.queued;
@@ -603,13 +557,6 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       this.guideState.set(key, mute);
       if (track.mute !== mute) this.bridge.command({ name: 'setTrack', id: track.id, mute });
     }
-  }
-
-  setMetersWanted(delta: number) {
-    const before = this.meterClients > 0;
-    this.meterClients = Math.max(0, this.meterClients + delta);
-    const after = this.meterClients > 0;
-    if (before !== after) this.bridge.command({ name: 'setMeters', enabled: after });
   }
 
   // ------------------------------------------------------------------- MIDI
@@ -846,7 +793,6 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     },
 
     updateSettings: (partial: Partial<Settings>) => this.updateSettings(partial),
-    mixerGroup: (group: unknown, op: unknown, value?: unknown) => this.mixerGroup(String(group), String(op), value),
     setTrack: (id: unknown, props: { mute?: boolean; solo?: boolean; volume?: number }) => {
       if (typeof id !== 'string' || !props || typeof props !== 'object') return;
       this.bridge.command({ name: 'setTrack', id, mute: props.mute, solo: props.solo, volume: props.volume });
@@ -876,11 +822,6 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       this.bridge.command({ name: 'removeLocators', times });
     },
   };
-
-  /** Display names of mixer groups, for UIs. */
-  groupNames(): { id: string; name: string }[] {
-    return [...this.groups().keys()].map((id) => ({ id, name: groupDisplayName(id) }));
-  }
 
   /** Full snapshot for tests / REST. */
   snapshot(): AppState & { time: number; isPlaying: boolean } {

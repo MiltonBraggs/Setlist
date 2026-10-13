@@ -66,7 +66,6 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     send: (data: string) => void;
     /** For playhead frames: skipped while the device is behind (slow Wi-Fi), the next one supersedes it. */
     sendDroppable: (data: string) => void;
-    meters: boolean;
     /** The host computer is always owner, so you can't lock yourself out. */
     local: boolean;
     address: string;
@@ -124,11 +123,6 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     for (const c of clients) c.sendDroppable(data);
     publishOsc(false);
   });
-  app.on('mixer', (tracks) => broadcast({ type: 'mixer', tracks }));
-  app.on('meters', (levels) => {
-    const data = JSON.stringify({ type: 'meters', levels } satisfies ServerToClient);
-    for (const c of clients) if (c.meters) c.send(data);
-  });
 
   fastify.register(async (instance) => {
     instance.get('/ws', { websocket: true }, (socket, req) => {
@@ -136,7 +130,6 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       const client: Client = {
         send: (d: string) => socket.readyState === 1 && socket.send(d),
         sendDroppable: (d: string) => socket.readyState === 1 && socket.bufferedAmount < 64 * 1024 && socket.send(d),
-        meters: false,
         local: isLocalAddress(address),
         address,
         role: 'viewer',
@@ -175,12 +168,6 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
             if (!canDispatch(client.role, app.state.settings.viewer, msg.action)) return;
             app.dispatch(msg.action, Array.isArray(msg.args) ? msg.args : [], 'ui');
             break;
-          case 'meters':
-            if (msg.enabled !== client.meters) {
-              client.meters = !!msg.enabled;
-              app.setMetersWanted(client.meters ? 1 : -1);
-            }
-            break;
           case 'signIn': {
             const result = access.signIn(String(msg.pin ?? ''), address);
             if ('token' in result) client.token = result.token;
@@ -217,7 +204,6 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       socket.on('error', (err: Error) => console.warn('[ws] socket error', err.message));
       socket.on('close', () => {
         clients.delete(client);
-        if (client.meters) app.setMetersWanted(-1);
         refreshAccess();
       });
     });

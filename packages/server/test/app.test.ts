@@ -175,11 +175,11 @@ describe('transport', () => {
     time(160, false); // parked at Ballad's STOP
     bridge.commands = [];
     app.dispatch('go');
-    expect(bridge.commands).toEqual([{ name: 'jump', to: 176, quantized: false }, { name: 'play' }]);
+    expect(bridge.commands).toEqual([{ name: 'jump', to: 176, quantized: false }, { name: 'play', from: 176 }]);
 
     time(20, false);
     app.dispatch('go');
-    expect(bridge.last()).toEqual({ name: 'play' });
+    expect(bridge.last()).toEqual({ name: 'play', from: 20 });
 
     time(20, true);
     bridge.fromScript({ type: 'patch', state: { loop: { on: true, start: 16, length: 32 } } });
@@ -200,14 +200,14 @@ describe('transport', () => {
     time(160, false); // parked at Ballad's STOP (Live left the playhead there)
     bridge.commands = [];
     app.dispatch('playPause');
-    expect(bridge.commands).toEqual([{ name: 'jump', to: 0, quantized: false }, { name: 'play' }]);
+    expect(bridge.commands).toEqual([{ name: 'jump', to: 0, quantized: false }, { name: 'play', from: 0 }]);
   });
 
   it('plays normally when stopped inside a song', () => {
     time(20, false);
     bridge.commands = [];
     app.dispatch('play');
-    expect(bridge.commands).toEqual([{ name: 'play' }]);
+    expect(bridge.commands).toEqual([{ name: 'play', from: 20 }]);
   });
 
   it('queues per jump mode', () => {

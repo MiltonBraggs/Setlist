@@ -1,7 +1,7 @@
 {
   "tempo": 120,
   "sig": [4, 4],
-  "length": 216,
+  "length": 432,
   "cues": [
     [0, "Neon Lights {Capo 2} [blue] #upbeat"],
     [0, "> Intro"],
@@ -21,7 +21,21 @@
     [160, ". Encore [rose] #encore"],
     [160, "> Build {Everyone: half volume}"],
     [208, "SONG END"],
-    [216, "* scratch area"]
+    [224, "Marathon {Key of E} [teal]"],
+    [224, "> Intro"],
+    [240, "> Verse 1"],
+    [256, "> Pre-Chorus"],
+    [272, "> Chorus {Big!}"],
+    [288, "> Post-Chorus"],
+    [304, "> Verse 2"],
+    [320, "> Pre-Chorus 2"],
+    [336, "> Chorus 2"],
+    [352, "> Bridge {STOP – only piano}"],
+    [368, "> Build {Drums back in}"],
+    [384, "> Final Chorus"],
+    [400, "> Outro {Watch MD for the end}"],
+    [416, "STOP"],
+    [432, "* scratch area"]
   ],
   "tracks": [
     {
@@ -51,11 +65,15 @@
         ["[F]Carry me [G]home [Am]again", 112, 120],
         ["Last time, now", 128, 144],
         ["[blue] Hands up!", 176, 192],
-        ["[blue] Break it down", 192, 208]
+        ["[blue] Break it down", 192, 208],
+        ["Miles of road behind us", 240, 248],
+        ["Miles ahead, still we run", 272, 280],
+        ["Second wind is coming", 304, 312],
+        ["Run, run, run", 384, 400]
       ]
     },
     {
-      "name": "Chords +LYRICS [onlychords]",
+      "name": "Chord sheet +LYRICS [onlychords]",
       "color": 3381759,
       "clips": [
         ["[C]Intro [G] [Am] [F]", 0, 16],
@@ -65,6 +83,28 @@
         ["[Am]Slow [F]burn [C] [G]", 88, 104],
         ["[F]Carry [G]me [Am]home", 104, 120],
         ["[E]Build [A] [B]", 160, 176]
+      ]
+    },
+    {
+      "name": "Chords +CHORDS",
+      "color": 3381759,
+      "clips": [
+        ["E-B-C#m-A", 224, 240],
+        ["E", 240, 244],
+        ["B", 244, 248],
+        ["C#m-A", 248, 252],
+        ["E--B-", 252, 256],
+        ["A-B", 256, 264],
+        ["C#m-B", 264, 272],
+        ["E-B-C#m-A", 272, 288],
+        ["E-B-C#m-A", 288, 304],
+        ["E-B-C#m-A", 304, 320],
+        ["E-B-C#m-A", 320, 336],
+        ["E-B-C#m-A", 336, 352],
+        ["C#m-A", 352, 368],
+        ["E-B-C#m-A", 368, 384],
+        ["E-B-C#m-A", 384, 400],
+        ["E-B-C#m-A", 400, 416]
       ]
     },
     {

@@ -6,7 +6,7 @@
 
 export type Role = 'owner' | 'viewer';
 
-export type ViewerPage = 'performance' | 'setlist' | 'lyrics' | 'mixer';
+export type ViewerPage = 'performance' | 'setlist' | 'lyrics';
 export type PageId = ViewerPage | 'settings';
 
 export interface ViewerPermissions {
@@ -18,32 +18,37 @@ export interface ViewerPermissions {
   navigate: boolean;
   /** Reorder, add, remove, save and load setlists. */
   editSetlist: boolean;
-  /** Change mixer group mute / solo / volume. */
-  mixer: boolean;
   /** Lyrics track titles viewers may open; null = all. */
   lyricsTracks: string[] | null;
 }
 
 export const DEFAULT_VIEWER_PERMISSIONS: ViewerPermissions = {
-  pages: { performance: true, setlist: true, lyrics: true, mixer: false },
+  pages: { performance: true, setlist: true, lyrics: true },
   transport: false,
   navigate: false,
   editSetlist: false,
-  mixer: false,
   lyricsTracks: null,
 };
 
 /** Fill in missing keys of a stored profile (older settings files). */
 export function normalizeViewerPermissions(p: Partial<ViewerPermissions> | undefined): ViewerPermissions {
+  // Only known keys (older settings files may carry removed ones, e.g. the mixer).
+  const d = DEFAULT_VIEWER_PERMISSIONS;
+  const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
   return {
-    ...DEFAULT_VIEWER_PERMISSIONS,
-    ...p,
-    pages: { ...DEFAULT_VIEWER_PERMISSIONS.pages, ...p?.pages },
-    lyricsTracks: Array.isArray(p?.lyricsTracks) ? p.lyricsTracks : null,
+    pages: {
+      performance: flag(p?.pages?.performance, d.pages.performance),
+      setlist: flag(p?.pages?.setlist, d.pages.setlist),
+      lyrics: flag(p?.pages?.lyrics, d.pages.lyrics),
+    },
+    transport: flag(p?.transport, d.transport),
+    navigate: flag(p?.navigate, d.navigate),
+    editSetlist: flag(p?.editSetlist, d.editSetlist),
+    lyricsTracks: Array.isArray(p?.lyricsTracks) ? p.lyricsTracks.filter((t): t is string => typeof t === 'string') : null,
   };
 }
 
-export type Capability = 'any' | 'transport' | 'navigate' | 'editSetlist' | 'mixer' | 'owner';
+export type Capability = 'any' | 'transport' | 'navigate' | 'editSetlist' | 'owner';
 
 /** What each action needs. Actions not listed are owner-only. */
 export const ACTION_CAPABILITY: Record<string, Capability> = {
@@ -83,8 +88,6 @@ export const ACTION_CAPABILITY: Record<string, Capability> = {
   deleteSetlist: 'editSetlist',
   importSetlistText: 'editSetlist',
   resetSetlist: 'editSetlist',
-
-  mixerGroup: 'mixer',
 };
 
 export function can(role: Role, perms: ViewerPermissions, capability: Capability): boolean {

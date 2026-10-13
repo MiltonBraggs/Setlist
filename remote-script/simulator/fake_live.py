@@ -125,8 +125,16 @@ class Song(Observable):
         self._scheduled = None
 
     # --- transport -----------------------------------------------------------
+    # Like real Live: start_playing() plays from the *start marker*, which only a click in the
+    # arrangement moves (see click()); setting current_song_time through the API does not.
+    def click(self, t):
+        """The user clicks in Live's arrangement: moves the start marker and the playhead."""
+        self._start_marker = float(t)
+        self.current_song_time = float(t)
+
     def start_playing(self):
-        self.current_song_time = self._start_marker if not self.is_playing else self.current_song_time
+        if not self.is_playing:
+            self.current_song_time = self._start_marker
         self.is_playing = True
 
     def continue_playing(self):
@@ -140,11 +148,6 @@ class Song(Observable):
 
     def jump_by(self, beats):
         self.current_song_time = max(0.0, self.current_song_time + beats)
-
-    def __setattr__(self, name, value):
-        if name == "current_song_time" and not self.__dict__.get("is_playing", False):
-            object.__setattr__(self, "_start_marker", value)
-        Observable.__setattr__(self, name, value)
 
     def set_or_delete_cue(self):
         t = self.current_song_time

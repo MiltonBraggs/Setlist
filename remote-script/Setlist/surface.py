@@ -24,9 +24,9 @@ CUE_EPS = 1e-3
 
 
 def is_clip_track(name):
-    """Tracks whose arrangement clips we report: sections, lyrics, notes, measures."""
+    """Tracks whose arrangement clips we report: sections, lyrics, chords, notes, measures."""
     upper = name.upper()
-    if "+SECTIONS" in upper or "+LYRICS" in upper or "+MEASURES" in upper or "+NOTES" in upper:
+    if "+SECTIONS" in upper or "+LYRICS" in upper or "+MEASURES" in upper or "+NOTES" in upper or "+CHORDS" in upper:
         return True
     base = name.split("+")[0].split("[")[0].strip().lower()
     return base in ("sections", "measures")
@@ -368,7 +368,7 @@ class SetlistSurface(ControlSurface):
         name = cmd["name"]
         engine = self._engine
         if name == "play":
-            engine.play()
+            engine.play(cmd.get("from"))
         elif name == "continue":
             engine.resume()
         elif name == "stop":

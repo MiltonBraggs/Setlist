@@ -1,26 +1,27 @@
 import { useEffect, useState } from 'react';
 import { canDispatch } from '@setlist/core';
-import { act, useAccess, useStore } from './store.ts';
+import { act, loadPref, savePref, useAccess, useStore } from './store.ts';
 import { RoleBadge } from './components/Access.tsx';
 import { Transport } from './components/Transport.tsx';
 import { Performance } from './views/Performance.tsx';
 import { SetlistView } from './views/Setlist.tsx';
 import { Lyrics } from './views/Lyrics.tsx';
-import { Mixer } from './views/Mixer.tsx';
 import { SettingsView } from './views/Settings.tsx';
 
 const VIEWS = {
   performance: { label: 'Performance', Component: Performance },
   setlist: { label: 'Setlist', Component: SetlistView },
   lyrics: { label: 'Lyrics', Component: Lyrics },
-  mixer: { label: 'Mixer', Component: Mixer },
   settings: { label: 'Settings', Component: SettingsView },
 } as const;
 type ViewId = keyof typeof VIEWS;
 
+/** The page in the URL, else the last page this device used (a singer's phone reopens on Lyrics). */
 function viewFromHash(): ViewId {
   const id = location.hash.replace(/^#\/?/, '');
-  return id in VIEWS ? (id as ViewId) : 'performance';
+  if (id in VIEWS) return id as ViewId;
+  const last = loadPref<string>('lastPage', 'performance');
+  return last in VIEWS ? (last as ViewId) : 'performance';
 }
 
 /** AbleSet-compatible global shortcuts. View-specific ones live in the views. */
@@ -105,7 +106,11 @@ export function App() {
   useShortcuts();
 
   useEffect(() => {
-    const onHash = () => setView(viewFromHash());
+    const onHash = () => {
+      const next = viewFromHash();
+      savePref('lastPage', next);
+      setView(next);
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
+import { chartTitle, chordTracks, lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
 import { act, actThrottled, useStore } from '../store.ts';
 import { PinDialog } from '../components/Access.tsx';
 import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
@@ -37,14 +37,12 @@ const VIEWER_PAGES: { id: ViewerPage; label: string }[] = [
   { id: 'performance', label: 'Performance' },
   { id: 'setlist', label: 'Setlist' },
   { id: 'lyrics', label: 'Lyrics' },
-  { id: 'mixer', label: 'Mixer' },
 ];
 
-const VIEWER_CONTROLS: { key: 'transport' | 'navigate' | 'editSetlist' | 'mixer'; label: string; hint: string }[] = [
+const VIEWER_CONTROLS: { key: 'transport' | 'navigate' | 'editSetlist'; label: string; hint: string }[] = [
   { key: 'transport', label: 'Play, stop and GO', hint: 'Start and stop the show.' },
   { key: 'navigate', label: 'Jump to songs and sections', hint: 'Queue jumps, skip around, loop sections.' },
   { key: 'editSetlist', label: 'Edit the setlist', hint: 'Reorder, add, remove, save and load.' },
-  { key: 'mixer', label: 'Change the mixer', hint: 'Mute, solo and volume of track groups.' },
 ];
 
 function ViewerAccess() {
@@ -52,7 +50,8 @@ function ViewerAccess() {
   const viewer = state.settings.viewer;
   const [pinOpen, setPinOpen] = useState(false);
   const set = (patch: Partial<ViewerPermissions>) => act('updateSettings', { viewer: { ...viewer, ...patch } });
-  const lyricTitles = [...new Set(lyricsTracks(state.tracks).map((t) => t.title))];
+  const lyricsOnly = lyricsTracks(state.tracks).map((t) => t.title);
+  const lyricTitles = [...new Set([...lyricsOnly, ...chordTracks(state.tracks).map((c) => chartTitle(c, lyricsOnly))])];
   const allowedLyrics = viewer.lyricsTracks ?? lyricTitles;
   const { pinSet, owners, viewers } = state.access;
 
@@ -300,7 +299,7 @@ export function SettingsView() {
           title="Project"
           footer={
             <>
-              OSC examples: <code>/global/play</code>, <code>/setlist/jumpBySongs 1</code>, <code>/loop/toggle</code>, <code>/mixer/group VOX mute</code>. Send{' '}
+              OSC examples: <code>/global/play</code>, <code>/setlist/jumpBySongs 1</code>, <code>/loop/toggle</code>. Send{' '}
               <code>/subscribe &lt;port&gt;</code> to receive state.
             </>
           }

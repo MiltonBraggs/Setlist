@@ -280,6 +280,8 @@ export interface ParsedTrack {
   title: string;
   isSections: boolean;
   isLyrics: boolean;
+  /** `+CHORDS`: clip names are chords (`Am`, or `C-G-Am-F` split evenly over the clip). */
+  isChords: boolean;
   isMeasures: boolean;
   isClick: boolean;
   guide: boolean;
@@ -320,6 +322,7 @@ export function parseTrackName(raw: string): ParsedTrack {
     title: rest,
     isSections: upperFlags.includes('SECTIONS') || lowerTitle === 'sections',
     isLyrics: upperFlags.includes('LYRICS'),
+    isChords: upperFlags.includes('CHORDS'),
     isMeasures: lowerTitle === 'measures' || upperFlags.includes('MEASURES'),
     isClick: upperFlags.includes('CLICK') || lowerTitle === 'click',
     guide: upperFlags.includes('GUIDE'),

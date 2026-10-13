@@ -132,7 +132,6 @@ export class OscService {
       case '/loop/toggle': return d('toggleLoop');
       case '/loop/enable': return d('enableLoop');
       case '/loop/escape': return d('escapeLoop');
-      case '/mixer/group': return d('mixerGroup', args[0], args[1], args[2] !== undefined ? Number(args[2]) : undefined);
       case '/notify/big': return d('notify', args.length > 1 ? args[1] : args[0], true);
       case '/notify': return d('notify', args.length > 1 ? args[1] : args[0], false);
       case '/device/toggleLock': return d('toggleLock');

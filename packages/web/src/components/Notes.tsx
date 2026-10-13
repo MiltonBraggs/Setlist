@@ -101,16 +101,11 @@ function PartNote({ note }: { note: ActiveNote }) {
 
 /** Notes block for the Performance page. Renders nothing if the set has no notes. */
 export function NotesPanel({ time, song, section }: { time: number; song?: Song; section?: Section }) {
-  const { everyone, parts, sectionText, partTitles, followed, setFollowed } = useNotes(time, song, section);
+  const { everyone, parts, partTitles, followed, setFollowed } = useNotes(time, song, section);
   const [picking, setPicking] = useState(false);
-  if (!sectionText && everyone.length === 0 && parts.length === 0 && partTitles.length === 0) return null;
+  if (everyone.length === 0 && parts.length === 0 && partTitles.length === 0) return null;
   return (
     <section aria-label="Notes" className="flex flex-col gap-2">
-      {sectionText && (
-        <div role="status" className="rounded-[18px] bg-[#ff9f0a] px-5 py-2.5 text-[clamp(20px,3.4vh,36px)] leading-tight font-bold text-black [overflow-wrap:anywhere]">
-          {sectionText}
-        </div>
-      )}
       {everyone.map((n) => (
         <EveryoneNote key={n.trackTitle} note={n} />
       ))}
@@ -137,9 +132,8 @@ export function NotesPanel({ time, song, section }: { time: number; song?: Song;
 
 /** One-line notes banner for the top of the Lyrics page. */
 export function NotesBanner({ time, song, section }: { time: number; song?: Song; section?: Section }) {
-  const { everyone, parts, sectionText } = useNotes(time, song, section);
+  const { everyone, parts } = useNotes(time, song, section);
   const items: { key: string; label: string; line?: LyricLine; text?: string; loud: boolean }[] = [];
-  if (sectionText) items.push({ key: 'section', label: 'Everyone', text: sectionText, loud: true });
   for (const n of everyone) items.push({ key: n.trackTitle, label: n.current ? n.trackTitle : `Everyone · ${inBars(n.barsToNext!)}`, line: n.current ?? n.next, loud: !!n.current });
   for (const n of parts) if (n.current) items.push({ key: n.trackTitle, label: n.trackTitle, line: n.current, loud: false });
   if (items.length === 0) return null;

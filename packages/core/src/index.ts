@@ -6,5 +6,6 @@ export * from './plan.ts';
 export * from './protocol.ts';
 export * from './view.ts';
 export * from './lyrics.ts';
+export * from './chords.ts';
 export * from './access.ts';
 export * from './notes.ts';

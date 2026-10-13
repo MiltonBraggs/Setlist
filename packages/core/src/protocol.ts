@@ -23,7 +23,8 @@ export type ScriptToServer =
   | { type: 'mixer'; tracks: MixerUpdate };
 
 export type ScriptCommand =
-  | { name: 'play' }
+  /** Start playback from `from` (what the app shows); without it, from the current position. */
+  | { name: 'play'; from?: Beats }
   | { name: 'continue' }
   | { name: 'stop' }
   | { name: 'pause' }
@@ -136,15 +137,11 @@ export type ServerToClient =
   /** Top-level keys that changed. */
   | { type: 'patch'; state: Partial<AppState> }
   | { type: 'time'; time: Beats; playing: boolean }
-  | { type: 'meters'; levels: [string, number, number][] }
-  | { type: 'session'; session: Session }
-  /** Mixer-only changes, applied to `tracks`. */
-  | { type: 'mixer'; tracks: MixerUpdate };
+  | { type: 'session'; session: Session };
 
 export type ClientToServer =
   | { type: 'hello'; token?: string }
   | { type: 'action'; action: string; args?: unknown[] }
-  | { type: 'meters'; enabled: boolean }
   /** Enter the owner PIN. */
   | { type: 'signIn'; pin: string }
   | { type: 'signOut' }

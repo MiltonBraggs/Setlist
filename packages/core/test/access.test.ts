@@ -21,15 +21,15 @@ describe('access', () => {
   });
 
   it('gives default viewers read-only access', () => {
-    for (const action of ['play', 'go', 'nextSong', 'jumpToSong', 'setSetlist', 'mixerGroup']) {
+    for (const action of ['play', 'go', 'nextSong', 'jumpToSong', 'setSetlist']) {
       expect(canDispatch('viewer', viewer, action), action).toBe(false);
     }
     expect(canDispatch('viewer', viewer, 'clearNotification')).toBe(true);
   });
 
   it('keeps owner-only actions owner-only whatever the profile', () => {
-    const everything: ViewerPermissions = { ...viewer, transport: true, navigate: true, editSetlist: true, mixer: true };
-    for (const action of ['updateSettings', 'setTrack', 'toggleLock', 'midiLearn', 'notify', 'placeSectionLocators', 'unknownAction']) {
+    const everything: ViewerPermissions = { ...viewer, transport: true, navigate: true, editSetlist: true };
+    for (const action of ['updateSettings', 'setTrack', 'toggleLock', 'midiLearn', 'notify', 'placeSectionLocators', 'mixerGroup', 'unknownAction']) {
       expect(canDispatch('viewer', everything, action), action).toBe(false);
     }
   });
@@ -42,13 +42,12 @@ describe('access', () => {
     expect(canDispatch('viewer', { ...viewer, editSetlist: true }, 'createSetlist')).toBe(true);
     expect(canDispatch('viewer', { ...viewer, editSetlist: true }, 'selectSetlist')).toBe(true);
     expect(canDispatch('viewer', viewer, 'selectSetlist')).toBe(false);
-    expect(canDispatch('viewer', { ...viewer, mixer: true }, 'mixerGroup')).toBe(true);
   });
 
   it('controls pages and lyrics tracks', () => {
     expect(canSeePage('viewer', viewer, 'lyrics')).toBe(true);
-    expect(canSeePage('viewer', viewer, 'mixer')).toBe(false);
-    expect(canSeePage('viewer', { ...viewer, pages: { ...viewer.pages, mixer: true } }, 'mixer')).toBe(true);
+    expect(canSeePage('viewer', viewer, 'performance')).toBe(true);
+    expect(canSeePage('viewer', { ...viewer, pages: { ...viewer.pages, lyrics: false } }, 'lyrics')).toBe(false);
     expect(canSeePage('viewer', viewer, 'settings')).toBe(false);
     expect(canSeeLyricsTrack('viewer', viewer, 'Vocals')).toBe(true);
     const limited = { ...viewer, lyricsTracks: ['Chords'] };
@@ -59,10 +58,11 @@ describe('access', () => {
 
   it('normalizes stored profiles', () => {
     expect(normalizeViewerPermissions(undefined)).toEqual(DEFAULT_VIEWER_PERMISSIONS);
-    expect(normalizeViewerPermissions({ transport: true, pages: { mixer: true } as never })).toEqual({
+    // Removed keys from older settings files (the mixer) are dropped.
+    expect(normalizeViewerPermissions({ transport: true, mixer: true, pages: { mixer: true, lyrics: false } } as never)).toEqual({
       ...DEFAULT_VIEWER_PERMISSIONS,
       transport: true,
-      pages: { ...DEFAULT_VIEWER_PERMISSIONS.pages, mixer: true },
+      pages: { ...DEFAULT_VIEWER_PERMISSIONS.pages, lyrics: false },
     });
   });
 });

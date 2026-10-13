@@ -17,6 +17,7 @@ SET = {
         {"name": "Vocals +LYRICS", "clips": [["Line one", 0, 4], ["Line two", 4, 8]]},
         {"name": "Drums +NOTES", "clips": [["Kick only", 0, 8]]},
         {"name": "Bass"},
+        {"name": "Chords +CHORDS", "clips": [["C-G-Am-F", 0, 4]]},
     ],
 }
 
@@ -58,6 +59,11 @@ class SurfaceTests(unittest.TestCase):
         self.assertEqual([c["name"] for c in drums["clips"]], ["Kick only"])
         bass = [t for t in state["tracks"] if t["name"] == "Bass"][0]
         self.assertNotIn("clips", bass)
+
+    def test_snapshot_reports_chords_clips(self):
+        state = self.surface._snapshot()
+        chords = [t for t in state["tracks"] if t["name"] == "Chords +CHORDS"][0]
+        self.assertEqual([c["name"] for c in chords["clips"]], ["C-G-Am-F"])
 
     def test_fader_moves_send_only_a_mixer_message(self):
         self.song.tracks[2].mixer_device.volume.value = 0.5
