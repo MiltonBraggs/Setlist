@@ -266,6 +266,15 @@ export function formatDuration(seconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
+/**
+ * The stretch between a song's locator and its first section, e.g. a one-bar gap before
+ * "> Intro". Undefined when the first section starts on the song locator (or there are none).
+ */
+export function songLeadIn(song: Song): { start: Beats; end: Beats } | undefined {
+  const first = song.sections[0];
+  return first && first.start > song.start + EPS ? { start: song.start, end: first.start } : undefined;
+}
+
 /** A section's length in whole bars (at least 1). */
 export function sectionBars(section: { start: Beats; end: Beats }, sigNum: number, sigDen: number): number {
   return Math.max(1, Math.round((section.end - section.start) / beatsPerBar(sigNum, sigDen)));

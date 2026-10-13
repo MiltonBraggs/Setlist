@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { formatDuration, playView, searchSongs, setlistToText, type SetlistEntry, type Song } from '@setlist/core';
+import { formatDuration, playView, searchSongs, setlistToText, songLeadIn, type SetlistEntry, type Song } from '@setlist/core';
 import { act, useAccess, usePlayhead, usePref, useStore } from '../store.ts';
 import { Button, Dialog, Eyebrow, Icon, IconButton, TextInput, colorOf } from '../components/ui.tsx';
+
+/** currentSectionId while the playhead is between the song locator and its first section. */
+const LEAD_IN = 'lead-in';
 
 type DialogKind = null | 'add' | 'new' | 'options' | 'import' | { details: string };
 
@@ -170,7 +173,7 @@ export function SetlistView() {
                     current={v.song?.id === song.id}
                     upNext={nextId === song.id || state.queued?.songId === song.id}
                     progress={v.song?.id === song.id ? v.loc.songProgress : 0}
-                    currentSectionId={v.song?.id === song.id ? v.section?.id : undefined}
+                    currentSectionId={v.song?.id === song.id ? (v.section?.id ?? (v.song && songLeadIn(v.song) ? LEAD_IN : undefined)) : undefined}
                     locked={state.locked || !canJump}
                     canEdit={canEdit}
                     onToggleRemoved={() => update(entries.map((e) => (e.songId === song.id ? { ...e, removed: !e.removed } : e)))}
@@ -280,6 +283,17 @@ function SongRow(props: {
       {current && !editing && song.sections.length > 0 && (
         <div className="flex flex-col gap-4 px-6 pb-6 pl-[104px]">
           <div className="flex flex-wrap gap-2">
+            {/* The gap between the song locator and its first section: a chip with the song's name. */}
+            {songLeadIn(song) && (
+              <button
+                type="button"
+                disabled={props.locked}
+                onClick={() => act('jumpToSongStart', song.id)}
+                className={`min-h-9 rounded-full px-4 text-sm transition ${props.currentSectionId === LEAD_IN ? 'bg-accent text-onaccent' : 'bg-panel2 hover:brightness-95'}`}
+              >
+                {song.title}
+              </button>
+            )}
             {song.sections.map((sec) => (
               <button
                 key={sec.id}

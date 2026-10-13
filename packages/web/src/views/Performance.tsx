@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { beatsPerBar, countdownLabel, formatDuration, parseTrackName, playView, type Song } from '@setlist/core';
+import { beatsPerBar, countdownLabel, formatDuration, parseTrackName, playView, songLeadIn, type Song } from '@setlist/core';
 import { act, useAccess, usePlayhead, useStore } from '../store.ts';
 import { NotesPanel } from '../components/Notes.tsx';
 import { SetlistColumn } from '../components/SetlistColumn.tsx';
@@ -47,30 +47,69 @@ export function Metronome({ time }: { time: number }) {
 
 /** All sections, always readable: buttons are at least 110 px and wrap onto more rows in long songs. */
 function SongMap({ song, time, locked }: { song: Song; time: number; locked: boolean }) {
+  // The bar(s) between the song locator and the first section get a button with the song's name.
+  const leadIn = songLeadIn(song);
   return (
     <nav aria-label="Song map" className="flex shrink-0 flex-wrap gap-1.5">
+      {leadIn && (
+        <SectionButton
+          title={song.title}
+          length={leadIn.end - leadIn.start}
+          active={time >= leadIn.start && time < leadIn.end}
+          locked={locked}
+          onClick={() => act('jumpToSongStart', song.id)}
+        />
+      )}
       {song.sections.map((sec) => {
-        const active = time >= sec.start && time < sec.end;
-        const dim = sec.optional || sec.flags.skip;
         return (
-          <button
+          <SectionButton
             key={sec.id}
-            type="button"
-            disabled={locked}
-            aria-current={active ? 'true' : undefined}
+            title={sec.title}
+            description={sec.description}
+            length={sec.end - sec.start}
+            active={time >= sec.start && time < sec.end}
+            dim={sec.optional || sec.flags.skip}
+            locked={locked}
             onClick={() => act('jumpToSection', song.id, sec.id)}
-            title={sec.description ? `${sec.title} — ${sec.description}` : sec.title}
-            style={{ flex: `${Math.max(1, sec.end - sec.start)} 1 110px` }}
-            className={`relative min-h-11 min-w-[110px] truncate rounded-[14px] px-3 text-sm transition active:scale-[0.98] ${
-              active ? 'bg-accent font-semibold text-onaccent' : `bg-panel ${dim ? 'text-faint line-through' : 'text-fg'} hover:brightness-95`
-            }`}
-          >
-            {sec.description && <span aria-hidden className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#ff9f0a]" />}
-            {sec.title}
-          </button>
+          />
         );
       })}
     </nav>
+  );
+}
+
+function SectionButton({
+  title,
+  description,
+  length,
+  active,
+  dim,
+  locked,
+  onClick,
+}: {
+  title: string;
+  description?: string;
+  length: number;
+  active: boolean;
+  dim?: boolean;
+  locked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={locked}
+      aria-current={active ? 'true' : undefined}
+      onClick={onClick}
+      title={description ? `${title} — ${description}` : title}
+      style={{ flex: `${Math.max(1, length)} 1 110px` }}
+      className={`relative min-h-11 min-w-[110px] truncate rounded-[14px] px-3 text-sm transition active:scale-[0.98] ${
+        active ? 'bg-accent font-semibold text-onaccent' : `bg-panel ${dim ? 'text-faint line-through' : 'text-fg'} hover:brightness-95`
+      }`}
+    >
+      {description && <span aria-hidden className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#ff9f0a]" />}
+      {title}
+    </button>
   );
 }
 
@@ -107,6 +146,9 @@ export function Performance() {
   const endTime = new Date(clock.getTime() + v.setRemaining * 1000);
   const fmtClock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const sectionColor = v.section?.color ? colorOf(v.section.color) : undefined;
+  // In the gap between the song locator and its first section, "Now" shows the song's name.
+  const leadIn = song ? songLeadIn(song) : undefined;
+  const inLeadIn = !!song && !!leadIn && !v.section && time >= leadIn.start && time < leadIn.end;
   const q = state.queued;
   const queuedName = v.queuedSection ? `${v.queuedSection.title} · ${v.queuedSong?.title}` : v.queuedSong?.title;
   const { sigNum, sigDen } = state.live;
@@ -167,7 +209,7 @@ export function Performance() {
                 {state.live.loop.on && <span className="rounded-full bg-accent px-3 py-1 text-[13px] font-semibold text-onaccent">Looping</span>}
               </div>
               <h2 className={`${bigName} text-accent`} style={sectionColor ? { color: sectionColor } : undefined}>
-                {v.section?.title ?? '—'}
+                {v.section?.title ?? (inLeadIn ? song.title : '—')}
               </h2>
               {v.section?.description && <Cue text={v.section.description} large />}
               <div className="mt-1 h-1.5 shrink-0 overflow-hidden rounded-full bg-line">

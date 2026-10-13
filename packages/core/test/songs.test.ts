@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { barsUntil, buildSongs, countdownLabel, formatDuration, locate, sectionBars } from '../src/songs.ts';
+import { barsUntil, buildSongs, countdownLabel, formatDuration, locate, sectionBars, songLeadIn } from '../src/songs.ts';
 import { DEMO, snapshot, track } from './fixtures.ts';
 
 describe('buildSongs', () => {
@@ -91,5 +91,22 @@ describe('section bars and countdowns', () => {
     expect(countdownLabel(47, 48, 4, 4)).toBe('in 1 beat');
     expect(countdownLabel(48, 48, 4, 4)).toBe('now');
     expect(barsUntil(44.5, 48, 4, 4)).toEqual({ bars: 1, beats: 4 });
+  });
+});
+
+describe('songLeadIn', () => {
+  it('is the gap between the song locator and its first section', () => {
+    const [gap, flush] = buildSongs(
+      snapshot([
+        [0, 'Gap Song'],
+        [4, '> Intro'],
+        [20, 'SONG END'],
+        [32, 'Flush Song'],
+        [32, '> Intro'],
+        [48, 'SONG END'],
+      ]),
+    );
+    expect(songLeadIn(gap)).toEqual({ start: 0, end: 4 });
+    expect(songLeadIn(flush)).toBeUndefined();
   });
 });

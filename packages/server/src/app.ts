@@ -423,9 +423,10 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     this.updateGuides();
   }
 
-  private queueJump(song: Song, section?: Section) {
+  /** `sectionTiming`: a jump to the song's start, timed like a section button (the song-name button). */
+  private queueJump(song: Song, section?: Section, sectionTiming = false) {
     const to = section ? section.start : song.start;
-    const target = { kind: section ? ('section' as const) : ('song' as const), songId: song.id };
+    const target = { kind: section || sectionTiming ? ('section' as const) : ('song' as const), songId: song.id };
     let timing = jumpTiming(this.ctx(), target, this.state.settings.jumpMode);
     if (timing.kind === 'quantized' && this.loopActive()) {
       const loop = loopAt(this.plan, this.time);
@@ -698,6 +699,11 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     jumpToSong: (ref: unknown) => {
       const song = this.findSong(ref);
       if (song) this.queueJump(song);
+    },
+    /** The song-name button among the section buttons: back to the song locator, like a section. */
+    jumpToSongStart: (ref: unknown) => {
+      const song = this.findSong(ref);
+      if (song) this.queueJump(song, undefined, true);
     },
     jumpToSection: (songRef: unknown, sectionRef?: unknown) => {
       if (sectionRef === undefined) {

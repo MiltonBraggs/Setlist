@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AppState, LiveSnapshot, ScriptCommand, ScriptToServer, ServerToScript } from '@setlist/core';
-import { DEMO, track } from '../../core/test/fixtures.ts';
+import { DEMO, snapshot, track } from '../../core/test/fixtures.ts';
 import { SetlistApp } from '../src/app.ts';
 import type { LiveBridge } from '../src/bridge.ts';
 import { Storage } from '../src/storage.ts';
@@ -249,6 +249,38 @@ describe('transport', () => {
   it('ignores unknown and prototype actions', () => {
     expect(() => app.dispatch('constructor')).not.toThrow();
     expect(() => app.dispatch('__proto__')).not.toThrow();
+  });
+});
+
+describe('song-name button (jumpToSongStart)', () => {
+  // Each song: its locator, a one-bar gap, then "> Intro".
+  const GAPS = snapshot([
+    [0, 'First'],
+    [4, '> Intro'],
+    [20, '> Verse'],
+    [52, 'SONG END'],
+    [64, 'Second'],
+    [68, '> Intro'],
+    [100, 'SONG END'],
+  ]);
+
+  it('jumps to the song locator at the end of the current section, like a section button', () => {
+    start(GAPS);
+    time(10, true); // in First's Intro (4..20); the song plays to 52
+    app.dispatch('jumpToSongStart', ['first']);
+    expect(bridge.last()).toEqual({ name: 'queue', at: 20, to: 0 });
+    expect(app.state.queued).toMatchObject({ songId: 'first', to: 0 });
+    // Tapping the song in the setlist keeps its song timing: the end of the song.
+    app.dispatch('jumpToSong', ['first']);
+    expect(bridge.last()).toEqual({ name: 'queue', at: 52, to: 0 });
+  });
+
+  it('jumps straight there when stopped', () => {
+    start(GAPS);
+    time(30, false);
+    app.dispatch('jumpToSongStart', ['first']);
+    expect(bridge.last()).toEqual({ name: 'jump', to: 0, quantized: false });
+    expect(app.state.queued).toBeNull();
   });
 });
 

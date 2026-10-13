@@ -70,6 +70,7 @@ export const ACTION_CAPABILITY: Record<string, Capability> = {
   prevSection: 'navigate',
   jumpToSong: 'navigate',
   jumpToSection: 'navigate',
+  jumpToSongStart: 'navigate',
   jumpByMeasures: 'navigate',
   jumpToTime: 'navigate',
   jumpQueued: 'navigate',

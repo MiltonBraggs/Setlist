@@ -196,6 +196,9 @@ Performance page and as a strip at the top of the Lyrics page.
 - **Performance** (owner, drummer): a tappable setlist on the left (tap a song to queue it, or to jump while stopped),
   the song card, *Now* / *Next* with section cues and a bar countdown, and every section as a button. Long songs wrap
   the section buttons onto more rows instead of shrinking them. Fits a 1280×650 laptop or an iPad without scrolling.
+  When a song's locator comes before its first section (for example a one-bar gap before `> Intro`), the section
+  buttons start with one named after the song: it jumps back to the song locator, timed like a section button, and
+  *Now* shows the song's name during that gap.
 - **Lyrics** (singers, band): each section header has its cue and a row of dots, one per bar (one per 2–8 bars in
   very long sections), filled as the section plays, so you can see how much of it is left.
 - Each device reopens on the page it last used.
