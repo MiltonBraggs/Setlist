@@ -121,30 +121,50 @@ class Song(Observable):
         self.tracks = [Track(t["name"], t.get("color", 0x5a5a5a), t.get("clips", ())) for t in data.get("tracks", [])]
         self.last_event_time = float(data.get("length", 0) or (self.cue_points[-1].time + 32 if self.cue_points else 0))
         self.song_length = self.last_event_time + 16
-        self._start_marker = 0.0
+        self._start_time = 0.0  # Live's start marker
+        self._resume_at = 0.0   # where continue_playing() resumes: where playback last stopped
         self._scheduled = None
+        # A Live whose start_time can't be set (simulator: SIM_NO_START_TIME=1).
+        self.settable_start_time = True
 
     # --- transport -----------------------------------------------------------
-    # Like real Live: start_playing() plays from the *start marker*, which only a click in the
-    # arrangement moves (see click()); setting current_song_time through the API does not.
+    # Like real Live, a position set through current_song_time while stopped is NOT where
+    # playback starts: start_playing() plays from the start marker (start_time, moved by clicks
+    # in the arrangement or by setting start_time) and continue_playing() from where playback
+    # last stopped. Setting current_song_time while playing jumps.
+    @property
+    def start_time(self):
+        return self._start_time
+
+    @start_time.setter
+    def start_time(self, t):
+        if not self.settable_start_time:
+            raise AttributeError("start_time")
+        self._start_time = float(t)
+
     def click(self, t):
         """The user clicks in Live's arrangement: moves the start marker and the playhead."""
-        self._start_marker = float(t)
+        self._start_time = float(t)
+        self._resume_at = float(t)
         self.current_song_time = float(t)
 
     def start_playing(self):
         if not self.is_playing:
-            self.current_song_time = self._start_marker
+            self.current_song_time = self._start_time
         self.is_playing = True
 
     def continue_playing(self):
+        if not self.is_playing:
+            self.current_song_time = self._resume_at
         self.is_playing = True
 
     def stop_playing(self):
+        if self.is_playing:
+            self._resume_at = self.current_song_time
         self.is_playing = False
         self._scheduled = None
         # Like Live: the playhead returns to the start marker.
-        self.current_song_time = self._start_marker
+        self.current_song_time = self._start_time
 
     def jump_by(self, beats):
         self.current_song_time = max(0.0, self.current_song_time + beats)

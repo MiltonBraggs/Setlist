@@ -48,16 +48,21 @@ class LiveAdapter(object):
         return self.song.current_song_time
 
     def set_time(self, t):
-        self.song.current_song_time = max(0.0, t)
+        t = max(0.0, t)
+        self.song.current_song_time = t
+        if not self.song.is_playing:
+            # While stopped, Live starts playback from its start marker (Song.start_time), not from
+            # current_song_time: move the marker too, so GO / Play / Space start here.
+            try:
+                self.song.start_time = t
+            except (AttributeError, RuntimeError):
+                pass  # no settable start_time in this Live: the engine's start check covers it
 
     def is_playing(self):
         return self.song.is_playing
 
     def start_playing(self):
         self.song.start_playing()
-
-    def continue_playing(self):
-        self.song.continue_playing()
 
     def stop_playing(self):
         self.song.stop_playing()

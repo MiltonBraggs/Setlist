@@ -134,7 +134,7 @@ function Row({
           {word.map((b, i) => (
             <span key={i} className="inline-flex min-w-0 flex-col [overflow-wrap:anywhere]">
               {showChords && (
-                <span className="text-[0.45em] font-semibold tracking-normal" style={{ color }}>
+                <span className="mb-[0.05em] text-[0.7em] leading-[1.1] font-bold tracking-normal" style={{ color }}>
                   {b.chord ? transposeChord(b.chord, semitones, flats) : '\u00a0'}
                 </span>
               )}
@@ -240,34 +240,38 @@ const ChordBars = memo(function ChordBars({
   bars,
   offset,
   activeId,
+  nowBar,
   color,
   semitones,
   flats,
   canJump,
-  scrollRef,
 }: {
   bars: ChordBar[];
   /** Bars from the section start, so bar 3 sits in the third column. */
   offset: number;
   activeId?: string;
+  /** Start of the bar playing now, when it is in this row: tinted and kept in view like the current lyric line. */
+  nowBar?: number;
   color?: string;
   semitones: number;
   flats: boolean;
   canJump: boolean;
-  scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const chordColor = colorOf(color, 'var(--accent)');
   return (
-    <div ref={activeId ? scrollRef : undefined} role="list" aria-label="Chords" className="my-3 grid grid-cols-2 gap-y-2 text-[0.75em] font-semibold sm:grid-cols-4">
+    <div role="list" aria-label="Chords" className="my-3 grid grid-cols-2 gap-y-2 text-[0.75em] font-semibold sm:grid-cols-4">
       {bars.map((bar, i) => (
         <div
           key={bar.start}
           role="listitem"
+          data-now-bar={bar.start === nowBar ? '' : undefined}
           style={i === 0 ? ({ '--c2': (offset % 2) + 1, '--c4': (offset % 4) + 1 } as React.CSSProperties) : undefined}
-          className="flex min-h-[1.6em] min-w-0 flex-wrap items-center gap-x-1 border-l-2 border-line2 px-2 first:[grid-column-start:var(--c2)] sm:first:[grid-column-start:var(--c4)]"
+          className={`flex min-h-[1.6em] min-w-0 flex-wrap items-center gap-x-1 border-l-2 border-line2 px-2 transition-colors first:[grid-column-start:var(--c2)] sm:first:[grid-column-start:var(--c4)] ${
+            bar.start === nowBar ? 'rounded-r-lg bg-accent/10' : ''
+          }`}
         >
           {bar.held && bar.chords.length === 0 && (
-            <span className={`rounded-lg px-1.5 text-faint ${bar.held.id === activeId ? 'ring-2 ring-accent/40' : ''}`}>
+            <span className={`rounded-lg px-1.5 text-faint ${bar.start === nowBar && bar.held.id === activeId ? 'ring-2 ring-accent/40' : ''}`}>
               {transposeChord(bar.held.chord, semitones, flats)}
             </span>
           )}
@@ -482,9 +486,13 @@ export function Lyrics() {
     }
     return { items, lines };
   }, [track, songsToShow, events, chordMode, sigNum, sigDen]);
-  // The chord row holding the chord playing now: highlighted and kept in view.
+  // The chord row and bar playing now: highlighted and kept in view, bar by bar, like lyric lines.
   const nowChord = chordAt(events, time);
-  const activeBars = nowChord ? items.find((it) => it.kind === 'bars' && it.bars.some((b) => b.chords.includes(nowChord) || b.held === nowChord)) : undefined;
+  const activeBars = items.find(
+    (it): it is Extract<Item, { kind: 'bars' }> => it.kind === 'bars' && time >= it.bars[0].start - 1e-6 && time < it.bars[it.bars.length - 1].end - 1e-6,
+  );
+  const nowBar = activeBars?.bars.find((b) => time >= b.start - 1e-6 && time < b.end - 1e-6)?.start;
+  const nowBarKey = activeBars && nowBar !== undefined ? `${activeBars.id}@${nowBar}` : null;
   const latencyBeats = track ? (track.options.latency / 1000) * (state.live.tempo / 60) : 0;
   const playingIdx = activeLineIndex(lines, time + latencyBeats);
   const active = pinned ?? playingIdx;
@@ -498,17 +506,17 @@ export function Lyrics() {
     el.scrollIntoView({ behavior: scrolled.current ? 'smooth' : 'auto', block });
     scrolled.current = true;
   };
-  const barsRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const nowBarEl = () => scrollerRef.current?.querySelector<HTMLElement>('[data-now-bar]') ?? null;
   useEffect(() => {
-    if (barsLead) scrollTo(barsRef.current, 'center');
-  }, [activeBars, barsLead]);
+    if (barsLead) scrollTo(nowBarEl(), 'center');
+  }, [nowBarKey, barsLead]);
   const activeRef = useRef<HTMLButtonElement>(null);
   const lineBlock: ScrollLogicalPosition = track?.options.top !== null && track?.options.top !== undefined ? 'start' : 'center';
   useEffect(() => {
     if (!barsLead) scrollTo(activeRef.current, lineBlock);
   }, [active, lineBlock, barsLead]);
   // When the lyrics area changes height (a notes banner appears, the phone rotates), re-center at once.
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const target = useRef({ barsLead, lineBlock });
   target.current = { barsLead, lineBlock };
   useEffect(() => {
@@ -516,7 +524,7 @@ export function Lyrics() {
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       const { barsLead: bars, lineBlock: block } = target.current;
-      (bars ? barsRef.current : activeRef.current)?.scrollIntoView({ behavior: 'auto', block: bars ? 'center' : block });
+      (bars ? nowBarEl() : activeRef.current)?.scrollIntoView({ behavior: 'auto', block: bars ? 'center' : block });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -634,11 +642,11 @@ export function Lyrics() {
                   bars={item.bars}
                   offset={item.offset}
                   activeId={item === activeBars ? nowChord?.id : undefined}
+                  nowBar={item === activeBars ? nowBar : undefined}
                   color={o.chordColor}
                   semitones={semitonesFor(item.song)}
                   flats={flatsFor(item.song)}
                   canJump={canJump}
-                  scrollRef={barsRef}
                 />
               );
             }

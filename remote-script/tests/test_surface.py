@@ -65,6 +65,24 @@ class SurfaceTests(unittest.TestCase):
         chords = [t for t in state["tracks"] if t["name"] == "Chords +CHORDS"][0]
         self.assertEqual([c["name"] for c in chords["clips"]], ["C-G-Am-F"])
 
+    def test_placing_the_playhead_while_stopped_moves_lives_start_marker(self):
+        import Setlist.surface as surface  # noqa: E402
+
+        adapter = surface.LiveAdapter(self.song)
+        adapter.set_time(12.0)
+        self.assertEqual((self.song.current_song_time, self.song.start_time), (12.0, 12.0))
+        self.song.start_playing()
+        self.assertEqual(self.song.current_song_time, 12.0, "Live starts where Setlist placed it")
+        adapter.set_time(4.0)  # while playing: a jump, the start marker stays
+        self.assertEqual((self.song.current_song_time, self.song.start_time), (4.0, 12.0))
+
+    def test_a_live_without_a_settable_start_marker_still_moves_the_playhead(self):
+        import Setlist.surface as surface  # noqa: E402
+
+        self.song.settable_start_time = False
+        surface.LiveAdapter(self.song).set_time(12.0)
+        self.assertEqual(self.song.current_song_time, 12.0)
+
     def test_fader_moves_send_only_a_mixer_message(self):
         self.song.tracks[2].mixer_device.volume.value = 0.5
         self.song.tracks[2].mute = True

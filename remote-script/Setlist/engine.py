@@ -22,6 +22,10 @@ DISCONTINUITY_BEATS = 1.0
 RELOCATE_TICKS = 10
 # How far past a jump target the playhead may be when we next look (fast tempos, slow ticks).
 LANDING_ZONE_BEATS = 4.0
+# Updates (~100 ms each) after starting playback during which we check Live started where asked.
+START_CHECK_TICKS = 5
+# How far past the requested start the playhead may legitimately be by the first check.
+START_SLACK_BEATS = 2.0
 
 
 def _on_grid(value, step):
@@ -45,6 +49,7 @@ class JumpEngine(object):
         self.count_in = None
         self.relocate_after_stop = None
         self.relocate_ticks = 0
+        self.start_check = None      # {"at", "ticks"}: verifying where Live started playing
 
     # ------------------------------------------------------------------ plan
 
@@ -66,31 +71,29 @@ class JumpEngine(object):
         return self.live.time()
 
     def play(self, position=None):
-        # Never song.start_playing(): Live starts that from its *start marker* (wherever playback
-        # was last started or clicked), not from where we parked the playhead. Set the position
-        # explicitly and continue from it.
-        start = self._start_position(position)
-        self.relocate_after_stop = None
-        self.live.set_time(start)
-        self.last_time = start
-        self.live.continue_playing()
+        if self.live.is_playing():
+            return
+        self._start_at(self._start_position(position))
 
     def resume(self):
-        self.relocate_after_stop = None
-        self.last_time = self.live.time()
-        self.live.continue_playing()
+        if self.live.is_playing():
+            return
+        self._start_at(self._start_position(None))
 
     def stop(self):
         self.cancel_queue()
+        self.start_check = None
         self.live.stop_playing()
 
     def pause(self):
         position = self.live.time()
         self.cancel_queue()
+        self.start_check = None
         self.live.stop_playing()
         self._relocate(position)
 
     def jump(self, to, quantized):
+        self.start_check = None
         self.cancel_queue()
         self._leave_loop_if_outside(to)
         if not self.live.is_playing():
@@ -131,16 +134,14 @@ class JumpEngine(object):
         num, den = self.live.signature()
         start = max(0.0, target - bars * num * 4.0 / den)
         self.cancel_queue()
-        self.relocate_after_stop = None
-        self.live.set_time(start)
         self.count_in = {"target": target, "done": on_done}
-        self.last_time = start
-        self.live.continue_playing()  # not start_playing(): see play()
+        self._start_at(start)
 
     # --------------------------------------------------------------- updates
 
     def on_playing_changed(self, playing):
         if not playing:
+            self.start_check = None
             if self.count_in:
                 self.count_in["done"]()
                 self.count_in = None
@@ -161,6 +162,8 @@ class JumpEngine(object):
             self.last_time = self.live.time()
 
     def on_time(self, t):
+        if self.start_check is not None:
+            t = self._check_start(t)
         last = self.last_time
         self.last_time = t
         if not self.live.is_playing() or last is None:
@@ -196,6 +199,42 @@ class JumpEngine(object):
         self._update_loops(t)
 
     # -------------------------------------------------------------- internals
+
+    def _start_at(self, start):
+        """Start playback at `start`.
+
+        Live ignores a position set through the API while stopped: start_playing() starts from
+        its start marker (Song.start_time) and continue_playing() from where playback last
+        stopped. So move the playhead *and* the start marker (LiveAdapter.set_time does both
+        while stopped), start from the marker, then check the first updates: if Live still
+        started somewhere else (a Live without a settable start_time), jump to `start` at once.
+        Jumps during playback are reliable.
+        """
+        if self.live.is_playing():
+            self._jump_now(start)
+            return
+        self.relocate_after_stop = None
+        self.live.set_time(start)
+        self.last_time = start
+        self.live.start_playing()
+        self.start_check = {"at": start, "ticks": START_CHECK_TICKS}
+
+    def _check_start(self, t):
+        """Where playback really started; corrects it (see _start_at). Returns the playhead."""
+        check = self.start_check
+        check["ticks"] -= 1
+        if check["ticks"] <= 0:
+            self.start_check = None
+        if not self.live.is_playing():
+            return t  # Live may report playing a moment later
+        at = check["at"]
+        if at - EPS <= t <= at + START_SLACK_BEATS:
+            self.start_check = None  # started where we asked
+            return t
+        self.log("Live started playing at %.2f instead of %.2f: moving there" % (t, at))
+        self.live.jump_by(at - t)
+        self.last_time = at
+        return at
 
     def _relocate(self, position):
         self.live.set_time(position)

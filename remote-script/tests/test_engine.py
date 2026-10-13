@@ -112,28 +112,43 @@ class LateResetLive(FakeLive):
         FakeLive.advance(self)
 
 
-class StartMarkerLive(FakeLive):
-    """Real Live's transport: start_playing() plays from the *start marker* (set by clicking in
-    the arrangement), which setting current_song_time through the API does not move.
-    continue_playing() plays from the current position. Stopping returns to the start marker."""
+class RealLive(FakeLive):
+    """Real Live's transport, seen through LiveAdapter. A position set while stopped is not where
+    playback starts: start_playing() starts from the start marker (Song.start_time, also moved by
+    clicking in the arrangement) and continue_playing() from where playback last stopped.
+    Stopping returns the playhead to the start marker. LiveAdapter.set_time moves the start
+    marker while stopped; settable_start_time=False is a Live where that isn't possible."""
 
     def __init__(self, *a, **kw):
+        self.settable_start_time = kw.pop("settable_start_time", True)
         FakeLive.__init__(self, *a, **kw)
         self.start_marker = 0.0
+        self.resume_at = 0.0
 
     def click(self, t):
         """The user clicks in Live's arrangement."""
         self.start_marker = t
+        self.resume_at = t
         self.t = t
 
+    def set_time(self, t):
+        self.t = t
+        if not self.playing and self.settable_start_time:
+            self.start_marker = t
+
     def start_playing(self):
-        self.t = self.start_marker
+        if not self.playing:
+            self.t = self.start_marker
         self.playing = True
 
     def continue_playing(self):
+        if not self.playing:
+            self.t = self.resume_at
         self.playing = True
 
     def stop_playing(self):
+        if self.playing:
+            self.resume_at = self.t
         FakeLive.stop_playing(self)
         self.t = self.start_marker
 
@@ -224,7 +239,7 @@ class EngineTests(unittest.TestCase):
     def test_play_after_stop_starts_the_parked_song_not_lives_start_marker(self):
         # Setlist "B then A": B (16..32) ends with STOP -> park at A (0). The user had started B
         # by clicking at 20 in Live, so Live's start marker is at 20.
-        live = StartMarkerLive([0, 16, 32], step=0.2)
+        live = RealLive([0, 16, 32], step=0.2)
         engine = JumpEngine(live, lambda m: None, lambda *_: None)
         engine.set_plan({"events": [{"at": 32, "type": "stop", "relocate": 0}], "loops": []})
         live.click(20.0)
@@ -238,7 +253,7 @@ class EngineTests(unittest.TestCase):
         self.assertLess(live.t, 2, "A plays, not B from Live's start marker (20)")
 
     def test_play_pressed_during_the_park_hold_uses_the_parked_position(self):
-        live = StartMarkerLive([0, 16, 32], step=0.2)
+        live = RealLive([0, 16, 32], step=0.2)
         engine = JumpEngine(live, lambda m: None, lambda *_: None)
         engine.set_plan({"events": [{"at": 32, "type": "stop", "relocate": 0}], "loops": []})
         live.click(20.0)
@@ -251,7 +266,7 @@ class EngineTests(unittest.TestCase):
         self.assertLess(live.t, 2)
 
     def test_count_in_starts_before_the_given_position_not_at_the_start_marker(self):
-        live = StartMarkerLive([0, 16], step=0.2)
+        live = RealLive([0, 16], step=0.2)
         engine = JumpEngine(live, lambda m: None, lambda *_: None)
         live.click(40.0)
         done = []
@@ -260,6 +275,58 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(live.t, 12)
         run(engine, live, 30)
         self.assertEqual(len(done), 1)
+
+    def _stopped_then_jumped(self, **kw):
+        """Play from 0, stop at ~8, then pick another song (32) while stopped."""
+        live = RealLive([0, 16, 32, 48], step=0.2, **kw)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        live.click(0.0)
+        engine.play()
+        run(engine, live, 40)
+        engine.stop()
+        run(engine, live, 2)
+        engine.jump(32.0, False)
+        run(engine, live, 20)  # well past the park hold
+        self.assertEqual(live.t, 32, "the UI and Live show the picked song")
+        return live, engine
+
+    def test_play_after_jumping_while_stopped_starts_at_the_jump(self):
+        live, engine = self._stopped_then_jumped()
+        engine.play(32.0)
+        run(engine, live, 2)
+        self.assertTrue(live.playing)
+        self.assertTrue(32 <= live.t < 33, "plays the picked song, not where playback stopped (8): t=%s" % live.t)
+        self.assertNotIn("jump_by", [e[0] for e in live.log], "started right there, no correction needed")
+
+    def test_play_after_jumping_while_stopped_without_a_settable_start_marker(self):
+        # Live starts at its old start marker (0); the engine moves to the picked song at once.
+        live, engine = self._stopped_then_jumped(settable_start_time=False)
+        engine.play(32.0)
+        run(engine, live, 1)
+        self.assertTrue(32 <= live.t < 33, "corrected on the first update: t=%s" % live.t)
+        run(engine, live, 5)
+        self.assertTrue(33 <= live.t < 34.5, "then plays on from there: t=%s" % live.t)
+        self.assertEqual(len([e for e in live.log if e[0] == "jump_by"]), 1)
+
+    def test_count_in_without_a_settable_start_marker(self):
+        live = RealLive([0, 16], step=0.2, settable_start_time=False)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        live.click(40.0)
+        done = []
+        engine.start_count_in(16, 1, lambda: done.append(live.t))
+        run(engine, live, 1)
+        self.assertTrue(12 <= live.t < 13, "count-in bar corrected to 12: t=%s" % live.t)
+        run(engine, live, 25)
+        self.assertEqual(len(done), 1)
+
+    def test_play_while_already_playing_does_not_restart(self):
+        live = RealLive([0, 16, 32], step=0.2)
+        engine = JumpEngine(live, lambda m: None, lambda *_: None)
+        engine.play(0.0)
+        run(engine, live, 20)
+        engine.play(0.0)  # a stale app state must not send Live back to its start marker
+        run(engine, live, 1)
+        self.assertGreater(live.t, 4)
 
     def test_restart_from_stop_point_does_not_refire(self):
         live, engine, _ = make([0, 16], {"events": [{"at": 16, "type": "stop", "relocate": None}], "loops": []})

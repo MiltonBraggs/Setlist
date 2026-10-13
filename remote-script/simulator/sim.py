@@ -34,6 +34,8 @@ def main():
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     song = fake_live.Song(data)
+    # Mimic a Live whose start marker can't be set through the API (exercises the start check).
+    song.settable_start_time = os.environ.get("SIM_NO_START_TIME") != "1"
     fake_live.install(song)
 
     import Setlist  # noqa: E402  (imports Live / _Framework fakes)
