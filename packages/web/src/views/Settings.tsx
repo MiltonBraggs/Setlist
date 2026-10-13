@@ -25,6 +25,7 @@ export const ACTION_LABELS: Record<string, string> = {
   prevSection: 'Previous section',
   toggleLoop: 'Loop',
   escapeLoop: 'Escape loop',
+  metronome: 'Metronome (emergency click)',
   jumpQueued: 'Jump to queued',
   jumpQueuedNow: 'Jump to queued now',
   cancelQueue: 'Cancel queued jump',

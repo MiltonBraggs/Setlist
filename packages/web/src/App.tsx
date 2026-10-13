@@ -47,6 +47,7 @@ function useShortcuts() {
         'shift+J': ['jumpQueuedNow'],
         c: ['cancelQueue'],
         g: ['go'],
+        k: ['metronome'],
       };
       const key = `${e.shiftKey && e.key !== 'Shift' ? 'shift+' : ''}${e.key}`;
       const entry = map[key];

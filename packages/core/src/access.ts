@@ -71,6 +71,7 @@ export const ACTION_CAPABILITY: Record<string, Capability> = {
   jumpToSong: 'navigate',
   jumpToSection: 'navigate',
   jumpToSongStart: 'navigate',
+  metronome: 'navigate',
   jumpByMeasures: 'navigate',
   jumpToTime: 'navigate',
   jumpQueued: 'navigate',

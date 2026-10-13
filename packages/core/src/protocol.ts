@@ -107,6 +107,8 @@ export interface AppState {
   /** All setlists of this project. */
   setlists: SetlistSummary[];
   queued: QueuedJump | null;
+  /** Set by the Metronome button: the section it returns to (GO, or the button again). */
+  metronomeReturn: { songId: string; sectionId?: string; title: string; to: number } | null;
   settings: Settings;
   /** Device-wide lock: disables controls on all clients. */
   locked: boolean;
@@ -133,6 +135,8 @@ export interface Session {
   /** Remembered by the device so it stays owner after a reload. */
   token?: string;
   error?: string;
+  /** The page build the server serves (assets/index-<hash>.js): a device running another one reloads. */
+  webBuild?: string;
 }
 
 export type ServerToClient =

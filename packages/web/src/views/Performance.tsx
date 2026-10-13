@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { beatsPerBar, countdownLabel, formatDuration, parseTrackName, playView, songLeadIn, type Song } from '@setlist/core';
+import { beatsPerBar, countdownLabel, formatDuration, metronomeSection, parseTrackName, playView, songLeadIn, type Song } from '@setlist/core';
 import { act, useAccess, usePlayhead, useStore } from '../store.ts';
 import { NotesPanel } from '../components/Notes.tsx';
 import { SetlistColumn } from '../components/SetlistColumn.tsx';
@@ -60,7 +60,7 @@ function SongMap({ song, time, locked }: { song: Song; time: number; locked: boo
           onClick={() => act('jumpToSongStart', song.id)}
         />
       )}
-      {song.sections.map((sec) => {
+      {song.sections.filter((sec) => !sec.metronome).map((sec) => {
         return (
           <SectionButton
             key={sec.id}
@@ -140,9 +140,16 @@ export function Performance() {
   const song = v.song;
   const entry = song ? state.setlist.entries.find((e) => e.songId === song.id) : undefined;
   const description = entry?.description ?? song?.description;
+  // The next song's {description}, usually its key, so the band can get ready.
+  const nextNote = v.nextSong ? (state.setlist.entries.find((e) => e.songId === v.nextSong!.id)?.description ?? v.nextSong.description) : undefined;
   const sectionSpan = v.section ? v.section.end - v.section.start : 0;
   const sectionPct = v.section ? Math.max(0, Math.min(100, ((time - v.section.start) / (sectionSpan || 1)) * 100)) : 0;
-  const quick = song?.sections.filter((s) => s.quickAccess) ?? [];
+  const quick = song?.sections.filter((s) => s.quickAccess && !s.metronome) ?? [];
+  // Emergency click: the song's metronome section, and where the button / GO return to.
+  const click = song ? metronomeSection(song) : undefined;
+  const inClick = !!v.section?.metronome;
+  const clickReturn = state.metronomeReturn?.songId === song?.id ? state.metronomeReturn : null;
+  const backTitle = clickReturn?.title ?? song?.sections.find((s) => !s.metronome)?.title ?? song?.title;
   const endTime = new Date(clock.getTime() + v.setRemaining * 1000);
   const fmtClock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const sectionColor = v.section?.color ? colorOf(v.section.color) : undefined;
@@ -168,8 +175,10 @@ export function Performance() {
           </span>
         </div>
 
-        <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-[240px_minmax(0,1.15fr)_minmax(0,1fr)]">
-          <div className="order-last max-h-[50vh] min-h-0 lg:order-none lg:max-h-none">
+        {/* Phones: one column (the grid dissolves into it) with the section buttons above the setlist. */}
+        <div className="grid gap-3 max-lg:contents lg:min-h-0 lg:flex-1 lg:grid-cols-[240px_minmax(0,1.15fr)_minmax(0,1fr)]">
+          {/* flex: the list is held to this box (half the screen on phones) and scrolls inside it. */}
+          <div className="order-last flex max-h-[50vh] min-h-0 flex-col lg:order-none lg:max-h-none">
             <SetlistColumn currentId={song?.id} nextId={v.nextSong?.id} queuedId={q?.songId} canJump={!jumpLocked} />
           </div>
 
@@ -189,8 +198,23 @@ export function Performance() {
                   <Metronome time={time} />
                 </div>
               )}
-              {quick.length > 0 && song && (
+              {(quick.length > 0 || click) && song && (
                 <div className="flex flex-wrap gap-2">
+                  {click && (
+                    <button
+                      type="button"
+                      disabled={jumpLocked}
+                      aria-pressed={inClick}
+                      onClick={() => act('metronome')}
+                      title={inClick ? 'Back to the song at the next bar (GO does the same)' : 'Click only, at the next bar (K)'}
+                      className={`inline-flex min-h-11 items-center gap-2 rounded-full border-2 border-[#ff9f0a] px-5 text-[15px] font-semibold transition active:scale-[0.98] disabled:opacity-40 ${
+                        inClick ? 'bg-[#ff9f0a] text-black' : 'text-fg hover:bg-[#ff9f0a]/15'
+                      }`}
+                    >
+                      <span aria-hidden>{inClick ? '↩' : '♩'}</span>
+                      {inClick ? `Back to ${backTitle}` : 'Metronome'}
+                    </button>
+                  )}
                   {quick.map((s) => (
                     <Button key={s.id} variant="outline" disabled={jumpLocked} onClick={() => act('jumpToSection', song.id, s.id)}>
                       {s.title}
@@ -232,6 +256,12 @@ export function Performance() {
                   </div>
                 )}
               </article>
+            ) : inClick ? (
+              <article aria-label="Leaving the metronome" className={`${card} gap-2 ring-2 ring-[#ff9f0a]`}>
+                <p className="m-0 text-sm font-semibold text-muted">Metronome · GO goes back to</p>
+                <h2 className={bigName}>{backTitle}</h2>
+                <p className="m-0 text-[15px] text-muted">At the next bar. Or tap any section.</p>
+              </article>
             ) : (
               <article className={`${card} gap-2`}>
                 <div className="flex items-baseline justify-between gap-3">
@@ -239,8 +269,14 @@ export function Performance() {
                   {countdown && <span className="text-sm font-semibold text-accent tabular">{countdown}</span>}
                 </div>
                 <h2 className={bigName}>{v.nextSection?.title ?? v.nextSong?.title ?? 'End of set'}</h2>
+                {!v.nextSection && nextNote && <p className="m-0 text-[17px] font-semibold text-muted lg:text-[clamp(15px,2.2vh,22px)]">{nextNote}</p>}
                 {v.nextSection?.description && <Cue text={v.nextSection.description} />}
-                {v.nextSection && v.nextSong && <p className="m-0 text-[15px] text-muted">Then {v.nextSong.title}</p>}
+                {v.nextSection && v.nextSong && (
+                  <p className="m-0 text-[15px] text-muted">
+                    Then {v.nextSong.title}
+                    {nextNote && ` · ${nextNote}`}
+                  </p>
+                )}
               </article>
             )}
           </div>

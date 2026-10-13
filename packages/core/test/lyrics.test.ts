@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeLineIndex, isChord, lyricsTracks, parseInline, parseLyricLine, transposeChord } from '../src/lyrics.ts';
+import { activeLineIndex, isChord, lyricsFollow, lyricsTracks, parseInline, parseLyricLine, transposeChord } from '../src/lyrics.ts';
 import { track } from './fixtures.ts';
 
 describe('lyrics', () => {
@@ -52,5 +52,41 @@ describe('lyrics', () => {
       { text: ' ', bold: false, italic: false },
       { text: 'c', bold: false, italic: true },
     ]);
+  });
+});
+
+describe('lyricsFollow: what the Lyrics page keeps centred', () => {
+  // Verse 1 20..36 (last line 32..36), Solo 36..52 and Bridge 52..68 with no lyrics or chords,
+  // Chorus 68.. whose first line starts a beat early (67..72).
+  const verse = { start: 20 };
+  const solo = { start: 36 };
+  const bridge = { start: 52 };
+  const chorus = { start: 68 };
+  const lastVerseLine = { start: 32, end: 36 };
+  const pickup = { start: 67, end: 72 };
+
+  it('follows lyric lines while they play, and through gaps inside their own section', () => {
+    expect(lyricsFollow({ time: 34, line: lastVerseLine, section: verse })).toBe('line');
+    expect(lyricsFollow({ time: 30, line: { start: 20, end: 24 }, section: verse })).toBe('line');
+  });
+
+  it('moves on to a section with no lyrics or chords instead of staying on the last line', () => {
+    expect(lyricsFollow({ time: 40, line: lastVerseLine, section: solo })).toBe('header');
+    expect(lyricsFollow({ time: 60, line: lastVerseLine, section: bridge })).toBe('header');
+  });
+
+  it('keeps a line placed a little before its section: while sung, and after', () => {
+    expect(lyricsFollow({ time: 67.5, line: pickup, section: bridge })).toBe('line');
+    expect(lyricsFollow({ time: 70, line: pickup, section: chorus })).toBe('line');
+    expect(lyricsFollow({ time: 70, line: { start: 67, end: 68.5 }, section: chorus })).toBe('line');
+  });
+
+  it('follows a chord row that started after the last line', () => {
+    expect(lyricsFollow({ time: 44, line: lastVerseLine, barsStart: 40, section: solo })).toBe('bars');
+  });
+
+  it('follows the line when the user pinned one, or when no section headers are shown', () => {
+    expect(lyricsFollow({ time: 40, line: lastVerseLine, section: solo, pinned: true })).toBe('line');
+    expect(lyricsFollow({ time: 40, line: lastVerseLine })).toBe('line');
   });
 });

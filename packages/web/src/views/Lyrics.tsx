@@ -9,6 +9,7 @@ import {
   linesForSong,
   beatsPerBar,
   locate,
+  lyricsFollow,
   lyricsTracks,
   sectionBars,
   parseInline,
@@ -308,18 +309,25 @@ const SectionHeader = memo(function SectionHeader({
   bars,
   dot,
   align,
+  lead,
 }: {
   section: Section;
   bars: number;
   dot: number;
   align: 'left' | 'center';
+  /** The page is following this section (nothing else is playing in it): tinted like a current line. */
+  lead: boolean;
 }) {
   const per = barsPerDot(bars);
   const dots = Math.ceil(bars / per);
   const current = dot >= 0 && dot < dots;
   const justify = align === 'center' ? 'justify-center' : 'justify-start';
   return (
-    <div className="mt-[1.1em] mb-2 flex flex-col gap-2 px-3" style={{ textAlign: align }}>
+    <div
+      data-now-section={current ? '' : undefined}
+      className={`mt-[1.1em] mb-2 flex flex-col gap-2 rounded-2xl px-3 py-2 transition-colors duration-300 ${lead ? 'bg-accent/10' : ''}`}
+      style={{ textAlign: align }}
+    >
       <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${justify}`}>
         {/* Same size as the lyrics; told apart by its color (the section's, or blue) and the dots under it. */}
         <span
@@ -405,6 +413,8 @@ export function Lyrics() {
   const chordMode: ChordMode = !track ? 'show' : track.chart ? 'only' : hasChords ? (modes[track.title] ?? track.options.chords) : 'hide';
   const { sigNum, sigDen } = state.live;
   const loc = locate(state.songs, time);
+  // The song's {description} (usually its key), or this setlist's override of it.
+  const songNote = (s: Song) => state.setlist.entries.find((e) => e.songId === s.id)?.description ?? s.description;
   const song = state.songs[loc.songIndex];
   // Why a song shows no chords: the owner gets the likely cause, viewers a plain note.
   const songHasChords = !!song && !!track && (chordsBetween(events, song.start, song.end).length > 0 || linesForSong(track, song).some(hasInlineChords));
@@ -441,7 +451,8 @@ export function Lyrics() {
       const songChords = chordMode === 'hide' ? [] : chordsBetween(events, s.start, s.end);
       // "Chords" with track chords is a chord chart: the lyric lines are left out.
       const songLines = chordMode === 'only' && songChords.length > 0 ? [] : allLines;
-      const headers = track.options.noSections ? [] : [...s.sections];
+      // The metronome section (emergency click) has no place among the lyrics.
+      const headers = track.options.noSections ? [] : s.sections.filter((x) => !x.metronome);
       // Track chords: each sits over the first lyric line it falls in; the rest become bar rows.
       const free: ChordEvent[] = [];
       const byLine = new Map<string, ChordEvent[]>();
@@ -496,36 +507,42 @@ export function Lyrics() {
   const latencyBeats = track ? (track.options.latency / 1000) * (state.live.tempo / 60) : 0;
   const playingIdx = activeLineIndex(lines, time + latencyBeats);
   const active = pinned ?? playingIdx;
-  // Keep in view whichever started last: the lyric line or the chord row (instrumental bars).
-  const barsLead = !!activeBars && pinned === null && (!lines[active] || itemTime(activeBars) > lines[active].start);
+  // Keep in view (and highlight) whichever started last: the lyric line, the chord row (instrumental
+  // bars), or the section itself, so a section with no lyrics or chords is followed too instead of
+  // the page jumping a long way when the next section starts.
+  const playingSection = song?.sections[loc.sectionIndex];
+  const nowSection = track?.options.noSections || playingSection?.metronome ? undefined : playingSection;
+  const lead = lyricsFollow({
+    time: time + latencyBeats,
+    line: lines[active],
+    barsStart: activeBars ? itemTime(activeBars) : undefined,
+    section: nowSection,
+    pinned: pinned !== null,
+  });
+  const leadKey = lead === 'bars' ? `b:${nowBarKey}` : lead === 'header' ? `h:${nowSection!.id}` : `l:${active}`;
 
   // The first scroll after opening the page is instant: a smooth one can be lost while the page lays out.
   const scrolled = useRef(false);
-  const scrollTo = (el: HTMLElement | null, block: ScrollLogicalPosition) => {
-    if (!el) return;
-    el.scrollIntoView({ behavior: scrolled.current ? 'smooth' : 'auto', block });
-    scrolled.current = true;
-  };
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const nowBarEl = () => scrollerRef.current?.querySelector<HTMLElement>('[data-now-bar]') ?? null;
-  useEffect(() => {
-    if (barsLead) scrollTo(nowBarEl(), 'center');
-  }, [nowBarKey, barsLead]);
   const activeRef = useRef<HTMLButtonElement>(null);
   const lineBlock: ScrollLogicalPosition = track?.options.top !== null && track?.options.top !== undefined ? 'start' : 'center';
+  const target = useRef({ lead, lineBlock });
+  target.current = { lead, lineBlock };
+  const scrollToLead = (behavior: ScrollBehavior) => {
+    const { lead: kind, lineBlock: block } = target.current;
+    const el =
+      kind === 'line' ? activeRef.current : scrollerRef.current?.querySelector<HTMLElement>(kind === 'bars' ? '[data-now-bar]' : '[data-now-section]');
+    el?.scrollIntoView({ behavior, block: kind === 'line' ? block : 'center' });
+    if (el) scrolled.current = true;
+  };
   useEffect(() => {
-    if (!barsLead) scrollTo(activeRef.current, lineBlock);
-  }, [active, lineBlock, barsLead]);
+    scrollToLead(scrolled.current ? 'smooth' : 'auto');
+  }, [leadKey, lineBlock]);
   // When the lyrics area changes height (a notes banner appears, the phone rotates), re-center at once.
-  const target = useRef({ barsLead, lineBlock });
-  target.current = { barsLead, lineBlock };
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      const { barsLead: bars, lineBlock: block } = target.current;
-      (bars ? nowBarEl() : activeRef.current)?.scrollIntoView({ behavior: 'auto', block: bars ? 'center' : block });
-    });
+    const ro = new ResizeObserver(() => scrollToLead('auto'));
     ro.observe(el);
     return () => ro.disconnect();
   }, [!track]);
@@ -600,7 +617,10 @@ export function Lyrics() {
             className="shrink-0 flex-nowrap max-sm:order-2"
           />
         )}
-        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted max-sm:order-3">{song?.title ?? 'Not in a song'}</p>
+        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted max-sm:order-3">
+          {song?.title ?? 'Not in a song'}
+          {song && songNote(song) && <span className="font-semibold text-fg"> · {songNote(song)}</span>}
+        </p>
         {pinned !== null && (
           <Button variant="ghost" className="max-sm:order-4" onClick={() => setPinned(null)}>
             Back to current
@@ -624,6 +644,7 @@ export function Lyrics() {
               return (
                 <h2 key={`t-${item.song.id}`} className="headline mt-16 mb-4 text-[0.8em]" style={{ textAlign: defaultAlign, color: item.song.color ? colorOf(item.song.color) : undefined }}>
                   {item.song.title}
+                  {songNote(item.song) && <span className="text-muted"> · {songNote(item.song)}</span>}
                 </h2>
               );
             }
@@ -633,7 +654,16 @@ export function Lyrics() {
               const dots = Math.ceil(bars / barsPerDot(bars));
               const dot =
                 time >= sec.end - 1e-6 ? dots : time < sec.start - 1e-6 ? -1 : Math.min(dots - 1, Math.floor(Math.floor((time - sec.start) / bpb + 1e-6) / barsPerDot(bars)));
-              return <SectionHeader key={`h-${sec.id}`} section={sec} bars={bars} dot={dot} align={defaultAlign} />;
+              return (
+                <SectionHeader
+                  key={`h-${sec.id}`}
+                  section={sec}
+                  bars={bars}
+                  dot={dot}
+                  align={defaultAlign}
+                  lead={lead === 'header' && sec.id === nowSection?.id}
+                />
+              );
             }
             if (item.kind === 'bars') {
               return (
@@ -651,7 +681,7 @@ export function Lyrics() {
               );
             }
             const { line, index } = item;
-            const isActive = index === active;
+            const isActive = index === active && lead === 'line';
             const progress = isActive && o.progress ? Math.max(0, Math.min(1, (time + latencyBeats - line.start) / (line.end - line.start || 1))) : 0;
             return (
               <LineView

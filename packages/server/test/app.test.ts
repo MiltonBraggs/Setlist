@@ -284,6 +284,64 @@ describe('song-name button (jumpToSongStart)', () => {
   });
 });
 
+describe('Metronome button', () => {
+  // Intro 0, Chorus 16, Outro 32, then the click-only section 48..52 before the STOP.
+  const CLICK = snapshot([
+    [0, 'Alpha'],
+    [0, '> Intro'],
+    [16, '> Chorus'],
+    [32, '> Outro'],
+    [48, '> Metronome +METRONOME'],
+    [52, 'STOP'],
+    [64, 'Beta'],
+    [64, '> Verse'],
+    [80, 'SONG END'],
+  ]);
+
+  it('goes to the click section at the next bar, and back to the section you left', () => {
+    start(CLICK);
+    time(20, true); // in the Chorus
+    app.dispatch('metronome');
+    expect(bridge.last()).toEqual({ name: 'jump', to: 48, quantized: true });
+    expect(app.state.metronomeReturn).toMatchObject({ songId: 'alpha', title: 'Chorus', to: 16 });
+
+    time(49, true); // the click is playing (and looping)
+    app.dispatch('metronome'); // pressed again: back to the Chorus at the next bar
+    expect(bridge.last()).toEqual({ name: 'jump', to: 16, quantized: true });
+
+    time(50, true);
+    app.dispatch('go'); // GO does the same (escaping the loop would run on past the click)
+    expect(bridge.last()).toEqual({ name: 'jump', to: 16, quantized: true });
+
+    time(17, true); // back in the song: the return is forgotten
+    expect(app.state.metronomeReturn).toBeNull();
+  });
+
+  it('leaves at the next bar when a section is tapped, not at the end of the click section', () => {
+    start(CLICK);
+    time(20, true);
+    app.dispatch('metronome');
+    time(49, true);
+    app.dispatch('jumpToSection', ['alpha', 'Outro']);
+    expect(bridge.last()).toEqual({ name: 'jump', to: 32, quantized: true });
+  });
+
+  it('moves straight there when stopped, ready for GO', () => {
+    start(CLICK);
+    time(20, false);
+    app.dispatch('metronome');
+    expect(bridge.last()).toEqual({ name: 'jump', to: 48, quantized: false });
+  });
+
+  it('does nothing in a song without a metronome section', () => {
+    start(CLICK);
+    time(70, true); // Beta
+    bridge.commands = [];
+    app.dispatch('metronome');
+    expect(bridge.commands).toEqual([]);
+  });
+});
+
 describe('Remote Script version check', () => {
   it('flags a copy in Live that differs from this checkout, and clears it on disconnect', () => {
     app.expectedScriptBuild = 'abc123';

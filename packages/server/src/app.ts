@@ -32,6 +32,7 @@ import {
   type Setlist,
   type SetlistEntry,
   type Song,
+  metronomeSection,
 } from '@setlist/core';
 import type { LiveBridge } from './bridge.ts';
 import type { PluginHub } from './plugins.ts';
@@ -131,6 +132,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
   private pluginHub: PluginHub | null = null;
   /** Executes custom OSC strings (wired up by the OSC service). */
   oscExec: (commands: string) => void = () => {};
+  /** Reached the metronome section since the button was pressed (leaving it clears metronomeReturn). */
+  private inMetronome = false;
   /** Fingerprint of remote-script/Setlist in this checkout; null skips the outdated-script check. */
   expectedScriptBuild: string | null = null;
 
@@ -150,6 +153,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       setlist: EMPTY_SETLIST,
       setlists: [],
       queued: null,
+      metronomeReturn: null,
       settings: storage.loadSettings(),
       locked: false,
       notification: null,
@@ -244,6 +248,13 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     const q = this.state.queued;
     // Safety net: a boundary we passed without the script reporting the jump.
     if (q && q.at !== null && this.playing && time > q.at + 1) this.setQueued(null);
+    if (this.state.metronomeReturn) {
+      if (this.currentSection().section?.metronome) this.inMetronome = true;
+      else if (this.inMetronome) {
+        this.inMetronome = false;
+        this.set({ metronomeReturn: null });
+      }
+    }
     const loopActive = this.loopActive();
     if (loopActive !== this.lastLoopActive) {
       this.lastLoopActive = loopActive;
@@ -520,8 +531,46 @@ export class SetlistApp extends EventEmitter<AppEvents> {
   private go() {
     // Stopped: play (between songs, play() first moves to the next setlist song).
     if (!this.playing) return this.play();
+    // In the metronome: back to the song (escaping its loop would run on past it).
+    if (this.currentSection().section?.metronome) return this.leaveMetronome();
     if (this.loopActive()) return this.escapeLoop();
     if (this.state.queued) return this.jumpQueued(true);
+  }
+
+  /**
+   * The Metronome button: into the song's click-only section at the next bar (Live's quantization),
+   * remembering where you were; pressed again (or GO) it goes back there.
+   */
+  private metronome() {
+    const { song, section } = this.currentSection();
+    if (!song) return;
+    if (section?.metronome) return this.leaveMetronome();
+    const click = metronomeSection(song);
+    if (!click) return;
+    this.cancelQueue();
+    this.inMetronome = false;
+    this.set({ metronomeReturn: { songId: song.id, sectionId: section?.id, title: section?.title ?? song.title, to: section?.start ?? song.start } });
+    this.moveTo(click.start, click.hasCue);
+  }
+
+  /** Back from the metronome to the section you left (start of it, at the next bar). */
+  private leaveMetronome() {
+    const { song } = this.currentSection();
+    if (!song) return;
+    const back = this.state.metronomeReturn;
+    const to = back?.songId === song.id ? back.to : (song.sections.find((s) => !s.metronome)?.start ?? song.start);
+    this.cancelQueue();
+    this.moveTo(to, true);
+  }
+
+  /** Playing: jump (on Live's quantization grid when `quantized`). Stopped: move there now. */
+  private moveTo(to: number, quantized: boolean) {
+    if (this.playing) {
+      this.bridge.command({ name: 'jump', to, quantized });
+    } else {
+      this.bridge.command({ name: 'jump', to, quantized: false });
+      this.updateTime(to, false);
+    }
   }
 
   private escapeLoop() {
@@ -701,6 +750,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       if (song) this.queueJump(song);
     },
     /** The song-name button among the section buttons: back to the song locator, like a section. */
+    metronome: () => this.metronome(),
     jumpToSongStart: (ref: unknown) => {
       const song = this.findSong(ref);
       if (song) this.queueJump(song, undefined, true);

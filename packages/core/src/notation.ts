@@ -60,6 +60,8 @@ export interface LocatorFlags {
   skip?: boolean;
   loop?: LoopFlag;
   end?: boolean;
+  /** `+METRONOME`: click-only emergency section (see songs.ts `metronomeSection`). */
+  metronome?: boolean;
 }
 
 export interface ParsedLocator {
@@ -238,6 +240,10 @@ export function parseLocator(raw: string): ParsedLocator {
         break;
       case 'END':
         result.flags.end = true;
+        break;
+      case 'METRONOME':
+      case 'METRO':
+        result.flags.metronome = true;
         break;
       case 'LOOP':
       case 'LOOPFULL': {

@@ -59,11 +59,14 @@ export function buildPlan(songs: Song[], order: string[], settings: Pick<Setting
   for (const song of songs) {
     const playable = song.sections.filter((s) => !s.optional);
     playable.forEach((sec, i) => {
-      if (sec.flags.skip) {
-        const target = playable.slice(i + 1).find((s) => !s.flags.skip);
+      // Metronome sections are skipped like +SKIP in the normal flow (only the Metronome button
+      // goes there), and loop until left once you're in one.
+      if (sec.flags.skip || sec.metronome) {
+        const target = playable.slice(i + 1).find((s) => !s.flags.skip && !s.metronome);
         if (target) add({ at: sec.start, type: 'jump', to: target.start });
         else songEndEvent(song, sec.start, song.endKind, song.stopThen);
       }
+      if (sec.metronome) return;
       if (sec.flags.pause) add({ at: sec.start, type: 'stop', relocate: null });
       if (sec.flags.stop) {
         const next = nextActiveSong(song, songs, order);
@@ -83,6 +86,10 @@ export function buildPlan(songs: Song[], order: string[], settings: Pick<Setting
         loops.push({ start: sec.start, end: sec.end, count: sec.flags.loop.count, full: sec.flags.loop.full });
       }
     });
+  }
+  // Metronome sections loop until left, wherever they are (also after a +END tail).
+  for (const song of songs) {
+    for (const sec of song.sections) if (sec.metronome) loops.push({ start: sec.start, end: sec.end, count: null, full: false });
   }
   for (const song of songs) songEndEvent(song, song.playEnd, song.endKind, song.stopThen);
 
@@ -152,8 +159,10 @@ export function sectionByOffset(ctx: NavContext, offset: number): { song: Song; 
     return song?.sections[0] ? { song, section: song.sections[0] } : undefined;
   }
   const song = ctx.songs[loc.songIndex];
-  const playable = song.sections.filter((s) => !s.optional || s.start <= ctx.time);
-  const curIdx = playable.findIndex((s) => s.id === song.sections[loc.sectionIndex]?.id);
+  const current = song.sections[loc.sectionIndex];
+  // Metronome sections are only reached with the Metronome button, never by stepping through sections.
+  const playable = song.sections.filter((s) => (!s.optional || s.start <= ctx.time) && (!s.metronome || s.id === current?.id));
+  const curIdx = playable.findIndex((s) => s.id === current?.id);
   const idx = curIdx + offset;
   if (idx >= 0 && idx < playable.length) return { song, section: playable[idx] };
   return undefined;
@@ -178,6 +187,8 @@ export function jumpTiming(
   const loc = locate(ctx.songs, ctx.time);
   const song = loc.songIndex >= 0 ? ctx.songs[loc.songIndex] : undefined;
   const section = song?.sections[loc.sectionIndex];
+  // Leaving the metronome (an emergency): at the next bar, never at the end of a long click section.
+  if (section?.metronome) return { kind: 'quantized' };
   const sectionEnd = section ? Math.min(section.end, song!.playEnd) : song?.sections.find((s) => s.start > ctx.time)?.start ?? song?.playEnd;
 
   switch (mode) {

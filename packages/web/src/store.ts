@@ -102,9 +102,27 @@ export function connect() {
       case 'session':
         if (msg.session.token !== undefined) writeToken(msg.session.token || undefined);
         useStore.setState({ role: msg.session.role, authError: msg.session.error ?? null });
+        reloadIfOutdated(msg.session.webBuild);
         break;
     }
   };
+}
+
+/**
+ * After an update the server serves a new build of the page. A device still running an older one
+ * (left open, or restored from memory) reloads itself, at most once per build.
+ */
+function reloadIfOutdated(build?: string) {
+  if (!build || !import.meta.env.PROD) return;
+  const entry = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src ?? '';
+  if (entry.endsWith(`/${build}`)) return;
+  try {
+    if (sessionStorage.getItem('setlistReloadedFor') === build) return;
+    sessionStorage.setItem('setlistReloadedFor', build);
+  } catch {
+    return; // without storage a reload could repeat: stay on this version
+  }
+  location.reload();
 }
 
 export function signIn(pin: string) {

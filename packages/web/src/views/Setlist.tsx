@@ -294,7 +294,7 @@ function SongRow(props: {
                 {song.title}
               </button>
             )}
-            {song.sections.map((sec) => (
+            {song.sections.filter((sec) => !sec.metronome).map((sec) => (
               <button
                 key={sec.id}
                 type="button"

@@ -79,9 +79,18 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const clients = new Set<Client>();
 
   const roleOf = (c: Client): Role => (c.local || !access.pinSet || access.isOwnerToken(c.token) ? 'owner' : 'viewer');
+  /** The page's entry script (assets/index-<hash>.js), read each time: `npm start` may have rebuilt it. */
+  const webBuild = (): string | undefined => {
+    if (!options.webDist) return undefined;
+    try {
+      return /assets\/(index-[\w-]+\.js)/.exec(fs.readFileSync(path.join(options.webDist, 'index.html'), 'utf8'))?.[1];
+    } catch {
+      return undefined;
+    }
+  };
   const sendSession = (c: Client, extra: Omit<Session, 'role'> = {}) => {
     c.role = roleOf(c);
-    c.send(JSON.stringify({ type: 'session', session: { role: c.role, ...extra } } satisfies ServerToClient));
+    c.send(JSON.stringify({ type: 'session', session: { role: c.role, webBuild: webBuild(), ...extra } } satisfies ServerToClient));
   };
   const refreshAccess = () => {
     let owners = 0;
@@ -235,7 +244,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   });
 
   if (options.webDist && fs.existsSync(options.webDist)) {
-    await fastify.register(fastifyStatic, { root: options.webDist });
+    await fastify.register(fastifyStatic, {
+      root: options.webDist,
+      cacheControl: false,
+      // The page itself is never reused from a cache, so after an update every phone gets the new app.
+      // Build files have a content hash in their name, so they can be kept.
+      setHeaders: (res, filePath) => {
+        res.header('Cache-Control', /[\\/]assets[\\/]/.test(filePath) ? 'public, max-age=31536000, immutable' : 'no-store');
+      },
+    });
     // SPA fallback
     fastify.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !req.url.startsWith('/api')) return reply.sendFile('index.html');

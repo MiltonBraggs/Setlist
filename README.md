@@ -60,7 +60,8 @@ starting from the song the UI shows.
 npm start
 ```
 
-This builds the web page first, so phones always get the version you pulled. Open the printed URL (port 80, or
+This builds the web page first, so phones always get the version you pulled; a phone that still has the old page
+open reloads itself when it reconnects. Open the printed URL (port 80, or
 3000+ if 80 is taken) on any device on the same network.
 
 ### Development
@@ -119,7 +120,8 @@ Permissions are enforced by the server, not just hidden in the UI.
 | `+STOP` `+PAUSE` `+SKIP` | Stop at / pause at / skip this section |
 | `+LOOP` `+LOOP:4` `+LOOPFULL` | Loop the section until escaped (GO or →), or 4 times |
 | `+END` | This and the following sections are optional (excluded from the duration and skipped) |
-| `{Capo 2}` | Description |
+| `> Metronome +METRONOME` | Click-only emergency section (also `+METRO`, or just a section named `Metronome`): never played in the normal flow; the *Metronome* button jumps in and it loops until you leave |
+| `{Capo 2}` / `{Key of E}` | Description. On a song locator, put the key here: it's shown with the song on the Performance page (song card, setlist, *Next*), the Lyrics page and the Setlist page |
 | `[3:20]` | Manual duration |
 | `[blue]` `[#ff8800]` | Color (gray, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink, rose) |
 | `#tag` `[nosong]` `[.class]` | Search tag / not counted as a song / CSS class |
@@ -199,6 +201,12 @@ Performance page and as a strip at the top of the Lyrics page.
   When a song's locator comes before its first section (for example a one-bar gap before `> Intro`), the section
   buttons start with one named after the song: it jumps back to the song locator, timed like a section button, and
   *Now* shows the song's name during that gap.
+- **Metronome (emergency click):** give each song a click-only section, best as its last section before the
+  `STOP` / `SONG END`, e.g. `> Metronome +METRONOME` over a few bars with only the click playing. Setlist never plays
+  it in the normal flow (the song ends where it starts). The orange **Metronome** button on the song card jumps
+  into it at the next bar, at the song's tempo, and it loops for as long as you need. The button then reads
+  **Back to Chorus** (the section you left): it, or GO, goes back there at the next bar; tapping any section works
+  too. Also on `K`, OSC `/setlist/metronome`, and MIDI (*Settings → MIDI*), e.g. for a footswitch.
 - **Lyrics** (singers, band): each section header has its cue and a row of dots, one per bar (one per 2–8 bars in
   very long sections), filled as the section plays, so you can see how much of it is left.
 - Each device reopens on the page it last used.
@@ -209,6 +217,7 @@ Performance page and as a strip at the top of the Lyrics page.
 - Transport: `Space` play/pause, `⇧Space` play, `⇧R` record.
 - Navigation: `←/→` song, `↑/↓` section, `⇧←/⇧→` bar.
 - Loop, queue and lock: `L` loop, `J` / `⇧J` jump to queued (quantized / now), `C` cancel queue, `G` GO, `⇧L` lock.
+- Emergency click: `K` Metronome (again, or `G`, to go back).
 - Setlist editor: `Ctrl+K` add song, `⇧S` save, `⇧O` load, `⇧H` hide removed, `Ctrl+P` print.
 - Lyrics view: `.` / `,` next / previous line, `B` back to the current line, `M` / `N` jump to the next / previous line, `⇧M` pin.
 
@@ -232,7 +241,7 @@ On Windows a MIDI port can only be opened by one app, so disable the device in L
 **OSC (UDP 39051):**
 - Transport: `/global/play|pause|stop|playPause|go|toggleRecording`.
 - Setlist: `/setlist/jumpBySongs n`, `/setlist/jumpToSong name|index`, `/setlist/jumpBySections n`, `/setlist/jumpToSection name`, `/setlist/jumpToQueued[Now]`, `/setlist/cancelQueued`.
-- Sections and loops: `/sections/next|previous`, `/loop/toggle|enable|escape`.
+- Sections and loops: `/sections/next|previous`, `/loop/toggle|enable|escape`, `/setlist/metronome`.
 - Notifications: `/notify/big all "text"`.
 - Subscriptions: send `/subscribe [host] port` to receive `/global/isPlaying`, `/setlist/activeSongName`, `/setlist/nextSongName`,
   `/setlist/activeSectionName`, `/setlist/songProgress`, `/setlist/setRemaining`, … (for example with Bitfocus Companion or Stream Deck).

@@ -20,6 +20,11 @@ export interface Section {
   hasCue: boolean;
   /** Part of the optional `+END` tail. */
   optional: boolean;
+  /**
+   * `+METRONOME` (or titled "Metronome"): a click-only emergency section. Never played in the normal
+   * flow; the Performance page's Metronome button jumps into it and it loops until you leave.
+   */
+  metronome: boolean;
   duration?: number;
 }
 
@@ -181,12 +186,15 @@ function finishSong(
       classes: s.parsed.classes,
       hasCue: s.hasCue,
       optional,
+      metronome: !!s.parsed.flags.metronome || /^metronome$/i.test(s.parsed.title),
       duration: s.parsed.duration,
     };
   });
 
-  const firstOptional = sections.find((s) => s.optional);
-  const playEnd = firstOptional ? firstOptional.start : end;
+  // The song ends where its tail of +END sections and metronome sections starts.
+  let tail = sections.length;
+  while (tail > 0 && (sections[tail - 1].optional || sections[tail - 1].metronome)) tail--;
+  const playEnd = tail < sections.length ? sections[tail].start : end;
   const computed = beatsToSeconds(playEnd - start, tempo);
 
   return {
@@ -273,6 +281,11 @@ export function formatDuration(seconds: number): string {
 export function songLeadIn(song: Song): { start: Beats; end: Beats } | undefined {
   const first = song.sections[0];
   return first && first.start > song.start + EPS ? { start: song.start, end: first.start } : undefined;
+}
+
+/** The song's click-only emergency section, if it has one. */
+export function metronomeSection(song: Song): Section | undefined {
+  return song.sections.find((s) => s.metronome);
 }
 
 /** A section's length in whole bars (at least 1). */

@@ -196,6 +196,38 @@ export function activeLineIndex(lines: LyricLine[], time: Beats): number {
   return idx;
 }
 
+const EPS = 1e-6;
+
+/** Lyric lines may start up to this many beats before their section (lyrics placed a little early). */
+export const LYRIC_PICKUP_BEATS = 1;
+
+/**
+ * What the Lyrics page follows (keeps centred and highlights): whichever started last of the
+ * lyric line, the chord row (instrumental bars) and the section itself. So a section with no
+ * lyrics or chords is followed too, instead of the page staying on the previous section's last
+ * line and then jumping a long way when the next section starts.
+ */
+export function lyricsFollow(o: {
+  time: Beats;
+  /** The last lyric line that has started (activeLineIndex), if any. */
+  line?: { start: Beats; end: Beats };
+  /** Start of the chord row playing now, if any. */
+  barsStart?: Beats;
+  /** The section playing now, if section headers are shown. */
+  section?: { start: Beats };
+  /** The user pinned a line (keyboard): always follow it. */
+  pinned?: boolean;
+}): 'line' | 'bars' | 'header' {
+  const { time, line, barsStart, section } = o;
+  if (o.pinned) return 'line';
+  if (barsStart !== undefined && (!line || barsStart > line.start)) return 'bars';
+  if (!section) return 'line';
+  // A line still inside its clip, or starting in the section (or a pickup just before it), belongs
+  // to the section playing now; the previous section's last line doesn't.
+  const lineIsCurrent = !!line && (line.end > time + EPS || line.start >= section.start - LYRIC_PICKUP_BEATS - EPS);
+  return lineIsCurrent ? 'line' : 'header';
+}
+
 export interface InlineToken {
   text: string;
   bold: boolean;

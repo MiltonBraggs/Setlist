@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, jumpTiming, silencePoints, songByOffset, sectionByOffset } from '../src/plan.ts';
 import { buildSongs } from '../src/songs.ts';
-import { DEMO } from './fixtures.ts';
+import { DEMO, snapshot } from './fixtures.ts';
 
 const songs = buildSongs(DEMO);
 const order = ['opener', 'ballad', 'closer'];
@@ -90,5 +90,58 @@ describe('silencePoints', () => {
   it('drops a stop overridden by a queued jump at the same boundary', () => {
     expect(silencePoints(plan, 160)).toEqual([240]);
     expect(silencePoints(plan, 64)).toEqual([160, 240]);
+  });
+});
+
+describe('metronome sections (emergency click)', () => {
+  // A: Intro 0, Chorus 16, Metronome 32..36 (last, before the STOP at 36). B: a mid-song metronome.
+  const set = buildSongs(
+    snapshot([
+      [0, 'Alpha'],
+      [0, '> Intro'],
+      [16, '> Chorus'],
+      [32, '> Metronome +METRONOME'],
+      [36, 'STOP'],
+      [40, 'Beta'],
+      [40, '> Verse'],
+      [56, '> Click +METRO'],
+      [60, '> Outro'],
+      [76, 'SONG END'],
+    ]),
+  );
+  const [alpha, beta] = set;
+  const ids = ['alpha', 'beta'];
+
+  it('is recognised by +METRONOME / +METRO, and the song ends where a trailing one starts', () => {
+    expect(alpha.sections.map((s) => [s.title, s.metronome])).toEqual([
+      ['Intro', false],
+      ['Chorus', false],
+      ['Metronome', true],
+    ]);
+    expect(beta.sections[1]).toMatchObject({ title: 'Click', metronome: true });
+    expect(alpha.playEnd).toBe(32);
+    expect(beta.playEnd).toBe(76); // a mid-song metronome doesn't end the song
+  });
+
+  it('is never played in the normal flow, and loops once you are in it', () => {
+    const plan = buildPlan(set, ids, { autojumpNextSong: true });
+    // Alpha's STOP happens at the end of the Chorus and parks at Beta; Beta steps over its Click.
+    expect(plan.events).toContainEqual({ at: 32, type: 'stop', relocate: 40 });
+    expect(plan.events).toContainEqual({ at: 56, type: 'jump', to: 60 });
+    expect(plan.loops).toEqual([
+      { start: 32, end: 36, count: null, full: false },
+      { start: 56, end: 60, count: null, full: false },
+    ]);
+  });
+
+  it('is skipped by next / previous section', () => {
+    expect(sectionByOffset({ songs: set, order: ids, time: 20 }, 1)).toBeUndefined(); // Chorus is Alpha's last
+    expect(sectionByOffset({ songs: set, order: ids, time: 44 }, 1)?.section.title).toBe('Outro');
+  });
+
+  it('is left at the next bar, whatever the jump mode', () => {
+    const ctx = { songs: set, order: ids, time: 33, isPlaying: true };
+    expect(jumpTiming(ctx, { kind: 'section', songId: 'alpha' }, 'dynamic')).toEqual({ kind: 'quantized' });
+    expect(jumpTiming(ctx, { kind: 'song', songId: 'beta' }, 'endOfSong')).toEqual({ kind: 'quantized' });
   });
 });
