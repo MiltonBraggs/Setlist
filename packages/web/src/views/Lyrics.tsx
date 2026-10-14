@@ -617,9 +617,16 @@ export function Lyrics() {
             className="shrink-0 flex-nowrap max-sm:order-2"
           />
         )}
-        <p className="m-0 min-w-[96px] flex-1 truncate text-[15px] text-muted max-sm:order-3">
-          {song?.title ?? 'Not in a song'}
-          {song && songNote(song) && <span className="font-semibold text-fg"> · {songNote(song)}</span>}
+        {/* The song and its key, big enough to read from the stage; a full row of its own on phones. */}
+        <p
+          className={`m-0 flex min-w-[96px] flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[22px] leading-tight font-bold tracking-[-0.01em] max-sm:order-3 max-sm:basis-full sm:text-[26px] ${
+            song ? 'text-fg' : 'text-muted'
+          }`}
+        >
+          <span className="[overflow-wrap:anywhere]">{song?.title ?? 'Not in a song'}</span>
+          {song && songNote(song) && (
+            <span className="rounded-full bg-accent/10 px-3 py-0.5 text-[0.85em] whitespace-nowrap text-accent">{songNote(song)}</span>
+          )}
         </p>
         {pinned !== null && (
           <Button variant="ghost" className="max-sm:order-4" onClick={() => setPinned(null)}>

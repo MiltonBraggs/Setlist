@@ -134,6 +134,25 @@ describe('metronome sections (emergency click)', () => {
     ]);
   });
 
+  it('stays inside its song when written without the > (as "Metronome +METRONOME")', () => {
+    const [only, ...rest] = buildSongs(
+      snapshot([
+        [0, 'Alpha'],
+        [0, '> Intro'],
+        [16, '> Chorus'],
+        [32, 'Metronome +METRONOME'],
+        [36, 'STOP'],
+      ]),
+    );
+    expect(rest).toEqual([]); // no extra song named "Metronome"
+    expect(only.sections.map((s) => [s.title, s.metronome])).toEqual([
+      ['Intro', false],
+      ['Chorus', false],
+      ['Metronome', true],
+    ]);
+    expect(only).toMatchObject({ end: 36, playEnd: 32, endKind: 'stop' });
+  });
+
   it('is skipped by next / previous section', () => {
     expect(sectionByOffset({ songs: set, order: ids, time: 20 }, 1)).toBeUndefined(); // Chorus is Alpha's last
     expect(sectionByOffset({ songs: set, order: ids, time: 44 }, 1)?.section.title).toBe('Outro');

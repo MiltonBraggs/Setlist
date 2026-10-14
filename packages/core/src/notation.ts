@@ -267,6 +267,9 @@ export function parseLocator(raw: string): ParsedLocator {
   }
   result.title = title;
 
+  // `+METRONOME` always marks a section (the song's emergency click), with or without the `>`.
+  if (result.flags.metronome && result.kind === 'song') result.kind = 'section';
+
   if (result.kind === 'song') {
     const upper = title.toUpperCase();
     if (upper === 'SONG END') result.kind = 'songEnd';

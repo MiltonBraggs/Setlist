@@ -44,6 +44,12 @@ describe('parseLocator', () => {
     expect(parseLocator('> Vamp +LOOPFULL').flags.loop).toEqual({ full: true, count: null });
   });
 
+  it('treats a +METRONOME locator as a section, with or without the >', () => {
+    expect(parseLocator('Metronome +METRONOME')).toMatchObject({ kind: 'section', title: 'Metronome', flags: { metronome: true } });
+    expect(parseLocator('> Click +METRO')).toMatchObject({ kind: 'section', title: 'Click', flags: { metronome: true } });
+    expect(parseLocator('Metronome')).toMatchObject({ kind: 'song' }); // without the flag it is a song name
+  });
+
   it('does not treat +JUMP on a song as a stop', () => {
     expect(parseLocator('My Song +JUMP').flags.stop).toBeUndefined();
   });

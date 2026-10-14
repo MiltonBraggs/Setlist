@@ -120,7 +120,7 @@ Permissions are enforced by the server, not just hidden in the UI.
 | `+STOP` `+PAUSE` `+SKIP` | Stop at / pause at / skip this section |
 | `+LOOP` `+LOOP:4` `+LOOPFULL` | Loop the section until escaped (GO or →), or 4 times |
 | `+END` | This and the following sections are optional (excluded from the duration and skipped) |
-| `> Metronome +METRONOME` | Click-only emergency section (also `+METRO`, or just a section named `Metronome`): never played in the normal flow; the *Metronome* button jumps in and it loops until you leave |
+| `Metronome +METRONOME` | Click-only emergency section (also `+METRO`; the `>` is optional with this flag). Put it **before** the song's `STOP` / `SONG END`: anything after those isn't part of the song. Never played in the normal flow; the *Metronome* button jumps in and it loops until you leave |
 | `{Capo 2}` / `{Key of E}` | Description. On a song locator, put the key here: it's shown with the song on the Performance page (song card, setlist, *Next*), the Lyrics page and the Setlist page |
 | `[3:20]` | Manual duration |
 | `[blue]` `[#ff8800]` | Color (gray, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink, rose) |
@@ -202,7 +202,7 @@ Performance page and as a strip at the top of the Lyrics page.
   buttons start with one named after the song: it jumps back to the song locator, timed like a section button, and
   *Now* shows the song's name during that gap.
 - **Metronome (emergency click):** give each song a click-only section, best as its last section before the
-  `STOP` / `SONG END`, e.g. `> Metronome +METRONOME` over a few bars with only the click playing. Setlist never plays
+  `STOP` / `SONG END`, e.g. a locator `Metronome +METRONOME` over a few bars with only the click playing. Setlist never plays
   it in the normal flow (the song ends where it starts). The orange **Metronome** button on the song card jumps
   into it at the next bar, at the song's tempo, and it loops for as long as you need. The button then reads
   **Back to Chorus** (the section you left): it, or GO, goes back there at the next bar; tapping any section works
