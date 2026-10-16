@@ -33,6 +33,8 @@ import {
   type SetlistEntry,
   type Song,
   metronomeSection,
+  mixTracks,
+  type MixGroup,
 } from '@setlist/core';
 import type { LiveBridge } from './bridge.ts';
 import type { PluginHub } from './plugins.ts';
@@ -154,6 +156,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       setlists: [],
       queued: null,
       metronomeReturn: null,
+      mix: { backing: null, vocals: null },
       settings: storage.loadSettings(),
       locked: false,
       notification: null,
@@ -192,6 +195,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
       case 'snapshot': {
         const { time, isPlaying, tracks, cues, ...live } = msg.state;
         this.set({ live: { ...EMPTY_LIVE, ...live }, tracks: tracks ?? [], cues: cues ?? [] });
+        this.updateMix();
         this.updateTime(time, isPlaying);
         this.refreshSongs(true);
         this.updateGuides();
@@ -204,6 +208,7 @@ export class SetlistApp extends EventEmitter<AppEvents> {
         if (tracks) partial.tracks = tracks;
         if (cues) partial.cues = cues;
         if (Object.keys(partial).length) this.set(partial);
+        if (tracks) this.updateMix();
         if (isPlaying !== undefined || time !== undefined) this.updateTime(time ?? this.time, isPlaying ?? this.playing);
         if (tracks || cues || 'songLength' in rest) this.refreshSongs(false);
         else if ('tempo' in rest) this.scheduleTempoRefresh();
@@ -236,6 +241,27 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     if (!Array.isArray(update) || update.length === 0) return;
     this.state.tracks = applyMixerUpdate(this.state.tracks, update); // no full 'patch': clients apply the 'mixer' event
     this.emit('mixer', update);
+    this.updateMix();
+  }
+
+  /** Publish the two mix buttons' state, only when it changes (mixer updates can be frequent). */
+  private updateMix() {
+    const state = (group: MixGroup) => {
+      const tracks = mixTracks(this.state.tracks, group);
+      return tracks.length ? tracks.every((t) => t.mute) : null;
+    };
+    const mix = { backing: state('backing'), vocals: state('vocals') };
+    if (mix.backing !== this.state.mix.backing || mix.vocals !== this.state.mix.vocals) this.set({ mix });
+  }
+
+  /** Mute all tracks of the group, or unmute them all if they are all muted already. */
+  private toggleMix(group: MixGroup) {
+    const tracks = mixTracks(this.state.tracks, group);
+    if (!tracks.length) return;
+    const mute = !tracks.every((t) => t.mute);
+    for (const t of tracks) if (t.mute !== mute) this.bridge.command({ name: 'setTrack', id: t.id, mute });
+    // Show it at once; Live's own report confirms (or corrects) it a moment later.
+    this.applyMixer(tracks.map((t) => [t.id, mute, t.solo, t.volume]));
   }
 
   private updateTime(time: number, playing: boolean) {
@@ -751,6 +777,8 @@ export class SetlistApp extends EventEmitter<AppEvents> {
     },
     /** The song-name button among the section buttons: back to the song locator, like a section. */
     metronome: () => this.metronome(),
+    toggleBacking: () => this.toggleMix('backing'),
+    toggleVocals: () => this.toggleMix('vocals'),
     jumpToSongStart: (ref: unknown) => {
       const song = this.findSong(ref);
       if (song) this.queueJump(song, undefined, true);

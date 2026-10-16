@@ -48,6 +48,8 @@ function useShortcuts() {
         c: ['cancelQueue'],
         g: ['go'],
         k: ['metronome'],
+        b: ['toggleBacking'],
+        v: ['toggleVocals'],
       };
       const key = `${e.shiftKey && e.key !== 'Shift' ? 'shift+' : ''}${e.key}`;
       const entry = map[key];

@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { can, canSeeLyricsTrack, canSeePage, type AppState, type Capability, type ClientToServer, type PageId, type Role, type ServerToClient } from '@setlist/core';
+import {
+  can,
+  canSeeLyricsTrack,
+  canSeePage,
+  PlayheadClock,
+  type AppState,
+  type Capability,
+  type ClientToServer,
+  type DeviceInfo,
+  type PageId,
+  type Role,
+  type ServerToClient,
+} from '@setlist/core';
 
 interface Store {
   connected: boolean;
@@ -8,7 +20,10 @@ interface Store {
   /** Last playhead report from Live */
   time: number;
   playing: boolean;
-  receivedAt: number;
+  /** This device's round trip to the server in ms (delay check every 2 s). */
+  rtt: number | null;
+  /** Owners: every connected device and its network health. */
+  devices: DeviceInfo[] | null;
   /** null until the server has answered this device's hello. */
   role: Role | null;
   /** Last sign-in / PIN error, shown in the dialog. */
@@ -20,7 +35,8 @@ export const useStore = create<Store>(() => ({
   state: null,
   time: 0,
   playing: false,
-  receivedAt: performance.now(),
+  rtt: null,
+  devices: null,
   role: null,
   authError: null,
 }));
@@ -45,6 +61,23 @@ function writeToken(token: string | undefined) {
 }
 
 let socket: WebSocket | null = null;
+/** Turns late, uneven playhead frames into a smooth playhead (see PlayheadClock). */
+const clock = new PlayheadClock();
+
+/** A random id this device keeps, so the owner can see when the same device reconnects. */
+function deviceId(): string {
+  const key = 'setlist:deviceId';
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = Math.random().toString(36).slice(2, 12);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return 'unknown';
+  }
+}
 
 function send(msg: ClientToServer) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
@@ -81,7 +114,7 @@ export function connect() {
   socket = new WebSocket(`${proto}://${location.host}/ws`);
   socket.onopen = () => {
     useStore.setState({ connected: true });
-    send({ type: 'hello', token: readToken() });
+    send({ type: 'hello', token: readToken(), device: deviceId() });
   };
   socket.onclose = () => {
     useStore.setState({ connected: false });
@@ -97,7 +130,18 @@ export function connect() {
         useStore.setState((s) => (s.state ? { state: { ...s.state, ...msg.state } } : {}));
         break;
       case 'time':
-        useStore.setState({ time: msg.time, playing: msg.playing, receivedAt: performance.now() });
+        clock.receive(msg.time, msg.playing, useStore.getState().state?.live.tempo ?? 120, performance.now());
+        useStore.setState({ time: msg.time, playing: msg.playing });
+        break;
+      case 'ping':
+        send({ type: 'pong', t: msg.t });
+        break;
+      case 'latency':
+        clock.latency = Math.min(Math.max(msg.rtt, 0), 2000) / 2000; // half the round trip, in seconds
+        useStore.setState({ rtt: msg.rtt });
+        break;
+      case 'devices':
+        useStore.setState({ devices: msg.devices });
         break;
       case 'session':
         if (msg.session.token !== undefined) writeToken(msg.session.token || undefined);
@@ -157,12 +201,14 @@ export function useAccess() {
   };
 }
 
-/** Playhead extrapolated between reports (Live sends ~10-30/s). */
+/**
+ * The playhead now: between frames (about 10 a second) it moves on at the tempo, shifted ahead by
+ * this device's network delay and smoothed against Wi-Fi jitter.
+ */
 export function currentTime(): number {
-  const { time, playing, receivedAt, state } = useStore.getState();
+  const { time, playing, state } = useStore.getState();
   if (!playing || !state) return time;
-  const elapsed = Math.min((performance.now() - receivedAt) / 1000, 0.5);
-  return time + (elapsed * state.live.tempo) / 60;
+  return clock.at(performance.now(), state.live.tempo);
 }
 
 /** Re-renders every animation frame while playing; returns the extrapolated playhead. */

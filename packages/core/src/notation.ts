@@ -297,6 +297,8 @@ export interface ParsedTrack {
   loopGuide: boolean;
   jumpGuide: boolean;
   neverMute: boolean;
+  /** `+BACKING` / `+VOCALS`: muted and unmuted together by the Performance page's mix buttons. */
+  mix?: MixGroup;
   /** `+NOTES` (a part's instructions, followed per device) or `+NOTES:ALL` (shown to everyone). */
   notes: false | 'part' | 'all';
   groups: string[];
@@ -307,6 +309,14 @@ export interface ParsedTrack {
 }
 
 const GROUP_NAME_RE = /^[A-Z0-9_-]+$/;
+
+/** Track sets with a mute button on the Performance page: backing tracks and the reference vocals. */
+export type MixGroup = 'backing' | 'vocals';
+
+/** The tracks of a mix group (flagged `+BACKING` / `+VOCALS`). */
+export function mixTracks<T extends { name: string }>(tracks: T[], group: MixGroup): T[] {
+  return tracks.filter((t) => parseTrackName(t.name).mix === group);
+}
 
 export function parseTrackName(raw: string): ParsedTrack {
   const { rest, brackets, flags } = extractTokens(raw);
@@ -338,6 +348,7 @@ export function parseTrackName(raw: string): ParsedTrack {
     loopGuide: upperFlags.includes('LOOPGUIDE'),
     jumpGuide: upperFlags.includes('JUMPGUIDE'),
     neverMute: upperFlags.includes('NEVERMUTE') || upperFlags.includes('NM'),
+    mix: upperFlags.includes('BACKING') ? 'backing' : upperFlags.includes('VOCALS') || upperFlags.includes('VOX') ? 'vocals' : undefined,
     notes: upperFlags.includes('NOTES:ALL') ? 'all' : upperFlags.includes('NOTES') ? 'part' : false,
     groups,
     attrs,

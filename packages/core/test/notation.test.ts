@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupDisplayName, parseCountIn, parseLocator, parseTrackName } from '../src/notation.ts';
+import { groupDisplayName, mixTracks, parseCountIn, parseLocator, parseTrackName } from '../src/notation.ts';
 
 describe('parseLocator', () => {
   it('parses a plain song with metadata', () => {
@@ -99,5 +99,20 @@ describe('parseTrackName', () => {
   it('formats group names', () => {
     expect(groupDisplayName('GIT_1')).toBe('Git 1');
     expect(groupDisplayName('BACKING_VOX')).toBe('Backing Vox');
+  });
+});
+
+describe('mix groups (+BACKING / +VOCALS)', () => {
+  it('reads the flags', () => {
+    expect(parseTrackName('Backing Tracks +BACKING').mix).toBe('backing');
+    expect(parseTrackName('Ref Vox +VOCALS').mix).toBe('vocals');
+    expect(parseTrackName('Guide +VOX').mix).toBe('vocals');
+    expect(parseTrackName('Vocals +LYRICS').mix).toBeUndefined(); // a name is not a flag
+  });
+
+  it('finds the tracks of a group', () => {
+    const tracks = [{ name: 'Keys +BACKING' }, { name: 'Drums' }, { name: 'Pads +BACKING' }, { name: 'Ref +VOCALS' }];
+    expect(mixTracks(tracks, 'backing').map((t) => t.name)).toEqual(['Keys +BACKING', 'Pads +BACKING']);
+    expect(mixTracks(tracks, 'vocals').map((t) => t.name)).toEqual(['Ref +VOCALS']);
   });
 });

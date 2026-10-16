@@ -113,6 +113,25 @@ function SectionButton({
   );
 }
 
+/** Mute / unmute a set of tracks (+BACKING / +VOCALS): green while you hear them, red while muted. */
+function MixButton({ label, muted, hotkey, disabled, onClick }: { label: string; muted: boolean; hotkey: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={muted}
+      onClick={onClick}
+      title={`${muted ? 'Unmute' : 'Mute'} ${label.toLowerCase()} (${hotkey})`}
+      className={`inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-5 text-[15px] font-semibold transition active:scale-[0.98] disabled:opacity-40 ${
+        muted ? 'border-[#ff3b30] bg-[#ff3b30] text-white' : 'border-line2 text-fg hover:bg-panel2'
+      }`}
+    >
+      <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${muted ? 'bg-white' : 'bg-[#30d158]'}`} />
+      {muted ? `${label} muted` : label}
+    </button>
+  );
+}
+
 /** A section description: a cue for the band, shown in orange. */
 function Cue({ text, large }: { text: string; large?: boolean }) {
   return (
@@ -134,7 +153,10 @@ export function Performance() {
   const time = usePlayhead();
   const playing = useStore((s) => s.playing);
   const clock = useClock();
-  const navigate = useAccess().can('navigate');
+  const access = useAccess();
+  const navigate = access.can('navigate');
+  const mixing = access.can('transport') && !state.locked;
+  const hasMix = state.mix.backing !== null || state.mix.vocals !== null;
   const jumpLocked = state.locked || !navigate;
   const v = playView(state.songs, state.setlist, time, state.live.tempo, state.queued);
   const song = v.song;
@@ -198,9 +220,15 @@ export function Performance() {
                   <Metronome time={time} />
                 </div>
               )}
-              {(quick.length > 0 || click) && song && (
+              {((quick.length > 0 || click) && song) || hasMix ? (
                 <div className="flex flex-wrap gap-2">
-                  {click && (
+                  {state.mix.backing !== null && (
+                    <MixButton label="Backing" muted={state.mix.backing} hotkey="B" disabled={!mixing} onClick={() => act('toggleBacking')} />
+                  )}
+                  {state.mix.vocals !== null && (
+                    <MixButton label="Vocals" muted={state.mix.vocals} hotkey="V" disabled={!mixing} onClick={() => act('toggleVocals')} />
+                  )}
+                  {click && song && (
                     <button
                       type="button"
                       disabled={jumpLocked}
@@ -215,13 +243,14 @@ export function Performance() {
                       {inClick ? `Back to ${backTitle}` : 'Metronome'}
                     </button>
                   )}
-                  {quick.map((s) => (
-                    <Button key={s.id} variant="outline" disabled={jumpLocked} onClick={() => act('jumpToSection', song.id, s.id)}>
-                      {s.title}
-                    </Button>
-                  ))}
+                  {song &&
+                    quick.map((s) => (
+                      <Button key={s.id} variant="outline" disabled={jumpLocked} onClick={() => act('jumpToSection', song.id, s.id)}>
+                        {s.title}
+                      </Button>
+                    ))}
                 </div>
-              )}
+              ) : null}
             </article>
             <NotesPanel time={time} song={song} section={v.section} />
           </div>

@@ -135,6 +135,9 @@ Without a locator these can only be jumped to while stopped. *Settings → Place
 - `+GUIDE` / `+LOOPGUIDE` / `+JUMPGUIDE`: guide tracks that are muted and unmuted automatically.
 - `+NEVERMUTE` / `+NM`: never muted.
 - `Click` / `+CLICK`: soloed during count-in.
+- `+BACKING` / `+VOCALS` (or `+VOX`): the Performance page's **Backing** and **Vocals** buttons mute / unmute these
+  tracks together (flag a Group track to cover everything in it). Keep the reference vocals out of the backing
+  group if you want to switch them on their own.
 - `Measures`: one clip per bar, named with the bar label.
 - `+NOTES` / `+NOTES:ALL`: part notes (see below).
 
@@ -207,6 +210,9 @@ Performance page and as a strip at the top of the Lyrics page.
   into it at the next bar, at the song's tempo, and it loops for as long as you need. The button then reads
   **Back to Chorus** (the section you left): it, or GO, goes back there at the next bar; tapping any section works
   too. Also on `K`, OSC `/setlist/metronome`, and MIDI (*Settings → MIDI*), e.g. for a footswitch.
+- **Backing / Vocals:** mute and unmute the `+BACKING` tracks and the `+VOCALS` reference vocals: green while you
+  hear them, red while muted. Also on `B` / `V`, OSC `/setlist/toggleBacking` / `/setlist/toggleVocals`, and MIDI.
+  They also show mutes made in Live itself.
 - **Lyrics** (singers, band): each section header has its cue and a row of dots, one per bar (one per 2–8 bars in
   very long sections), filled as the section plays, so you can see how much of it is left.
 - Each device reopens on the page it last used.
@@ -218,8 +224,12 @@ Performance page and as a strip at the top of the Lyrics page.
 - Navigation: `←/→` song, `↑/↓` section, `⇧←/⇧→` bar.
 - Loop, queue and lock: `L` loop, `J` / `⇧J` jump to queued (quantized / now), `C` cancel queue, `G` GO, `⇧L` lock.
 - Emergency click: `K` Metronome (again, or `G`, to go back).
+- Mix: `B` mute / unmute backing tracks, `V` mute / unmute the reference vocals.
+- These keys work while the Setlist page has the focus. To use keys while **Live** is in front, map them in Live
+  itself: *Key Map Mode* (Ctrl+K / Cmd+K), click the track's activator (mute) button, press a key, leave Key Map
+  Mode. Setlist's buttons follow those mutes too.
 - Setlist editor: `Ctrl+K` add song, `⇧S` save, `⇧O` load, `⇧H` hide removed, `Ctrl+P` print.
-- Lyrics view: `.` / `,` next / previous line, `B` back to the current line, `M` / `N` jump to the next / previous line, `⇧M` pin.
+- Lyrics view: `.` / `,` next / previous line, `Esc` back to the current line, `M` / `N` jump to the next / previous line, `⇧M` pin.
 
 **GO button:**
 - Stopped after a song: moves to the next song.
@@ -242,9 +252,38 @@ On Windows a MIDI port can only be opened by one app, so disable the device in L
 - Transport: `/global/play|pause|stop|playPause|go|toggleRecording`.
 - Setlist: `/setlist/jumpBySongs n`, `/setlist/jumpToSong name|index`, `/setlist/jumpBySections n`, `/setlist/jumpToSection name`, `/setlist/jumpToQueued[Now]`, `/setlist/cancelQueued`.
 - Sections and loops: `/sections/next|previous`, `/loop/toggle|enable|escape`, `/setlist/metronome`.
+- Mix: `/setlist/toggleBacking`, `/setlist/toggleVocals`.
 - Notifications: `/notify/big all "text"`.
 - Subscriptions: send `/subscribe [host] port` to receive `/global/isPlaying`, `/setlist/activeSongName`, `/setlist/nextSongName`,
   `/setlist/activeSectionName`, `/setlist/songProgress`, `/setlist/setRemaining`, … (for example with Bitfocus Companion or Stream Deck).
+
+## Playing live
+
+**What Setlist does for a busy Wi-Fi**
+- Playback never depends on the network: STOPs, song changes, loops and the metronome loop run inside Live.
+  A Wi-Fi glitch can only freeze screens or delay a button press on a phone.
+- Each device measures its delay to the server every 2 seconds and shows the playhead that far ahead;
+  uneven Wi-Fi is smoothed out, so lyrics don't stutter or jump back. Jumps, starts and stops show at once.
+- Playhead updates are thinned to about 10 a second during steady playback (devices fill in the motion);
+  jumps, starts, stops and loop wraps are sent the moment they happen.
+- Owners (and the computer running Setlist) get everything. Viewers get only what their pages show: no MIDI
+  or OSC settings, project folder, errors or network addresses, and only the Live tracks those pages read.
+- *Settings → Network* lists every connected device with its delay (green under 100 ms, orange under 300 ms),
+  its worst delay in about the last minute and how often it reconnected: check it at soundcheck.
+
+**Before the show**
+- Press GO / Play / Metronome / Backing on the Live laptop itself, or with a USB MIDI footswitch
+  (*Settings → MIDI*), so they never go through Wi-Fi. Use phones and iPads mainly to read.
+- A dedicated router for the band, 5 GHz only, on a fixed channel 36–48 (not "auto", not the DFS channels
+  52–144, which can force a channel change mid-show), Smart Connect / band steering off, 40 MHz width.
+  Place it on stage, raised, in sight of the devices: a full hall absorbs Wi-Fi.
+- Connect the Live laptop to the router with a cable and turn its Wi-Fi off. Reserve its IP address in the
+  router and bookmark the address on every device (the first address Setlist prints).
+- Laptop: on mains power, High performance, no sleep, Windows Update paused, other apps closed.
+- Phones / iPads: airplane mode with Wi-Fi on, Wi-Fi Assist / "switch to mobile data" off, auto-lock off,
+  Low Power Mode off, Setlist kept in front (*Add to Home Screen*).
+- Soundcheck: all devices connected, play a song, check *Settings → Network*; walk to the farthest position
+  and check again; unplug the router for a few seconds: Live keeps playing and devices come back on their own.
 
 ## Data
 

@@ -5,11 +5,23 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { Bonjour } from 'bonjour-service';
 import Fastify from 'fastify';
-import { canDispatch, setlistToText, type ClientToServer, type Role, type ServerToClient, type Session } from '@setlist/core';
+import {
+  canDispatch,
+  setlistToText,
+  stateForRole,
+  VIEWER_DEPENDS_ON_SETTINGS,
+  type AppState,
+  type ClientToServer,
+  type DeviceInfo,
+  type Role,
+  type ServerToClient,
+  type Session,
+} from '@setlist/core';
 import { AccessControl, isLocalAddress } from './access.ts';
 import { SetlistApp } from './app.ts';
 import { LiveBridge } from './bridge.ts';
 import { MidiService } from './midi.ts';
+import { deviceLabel, FrameThrottle, RttTracker } from './network.ts';
 import { OscService } from './osc.ts';
 import { PluginHub } from './plugins.ts';
 import { scriptBuild } from './scriptBuild.ts';
@@ -39,13 +51,18 @@ export interface RunningServer {
 
 function lanUrls(port: number): string[] {
   const suffix = port === 80 ? '' : `:${port}`;
-  const urls: string[] = [];
-  for (const addrs of Object.values(os.networkInterfaces())) {
+  // The address phones should use comes first: the real Wi-Fi / Ethernet adapter, not virtual ones
+  // (WSL, Hyper-V, VirtualBox, VMware, Docker), which phones can't reach.
+  const virtual = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|vboxnet|vmnet|utun|bridge/i;
+  const found: { url: string; rank: number }[] = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs ?? []) {
-      if (a.family === 'IPv4' && !a.internal) urls.push(`http://${a.address}${suffix}`);
+      if (a.family !== 'IPv4' || a.internal) continue;
+      const rank = virtual.test(name) ? 2 : /^(192\.168|10)\./.test(a.address) ? 0 : 1;
+      found.push({ url: `http://${a.address}${suffix}`, rank });
     }
   }
-  return [`http://localhost${suffix}`, ...urls];
+  return [`http://localhost${suffix}`, ...found.sort((a, b) => a.rank - b.rank).map((f) => f.url)];
 }
 
 export async function startServer(options: ServerOptions = {}): Promise<RunningServer> {
@@ -75,8 +92,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     address: string;
     token?: string;
     role: Role;
+    /** Sent by the device in its hello; reconnects of the same device are counted against it. */
+    deviceId?: string;
+    label: string;
+    since: number;
+    rtt: RttTracker;
   }
   const clients = new Set<Client>();
+  /** Connections per device since the server started (Settings → Network shows reconnects). */
+  const connects = new Map<string, number>();
 
   const roleOf = (c: Client): Role => (c.local || !access.pinSet || access.isOwnerToken(c.token) ? 'owner' : 'viewer');
   /** The page's entry script (assets/index-<hash>.js), read each time: `npm start` may have rebuilt it. */
@@ -88,9 +112,13 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       return undefined;
     }
   };
+  /** The whole state this device may see: everything for owners, only what their pages use for viewers. */
+  const sendState = (c: Client) => c.send(JSON.stringify({ type: 'state', state: stateForRole(app.state, c.role) } satisfies ServerToClient));
   const sendSession = (c: Client, extra: Omit<Session, 'role'> = {}) => {
+    const before = c.role;
     c.role = roleOf(c);
     c.send(JSON.stringify({ type: 'session', session: { role: c.role, webBuild: webBuild(), ...extra } } satisfies ServerToClient));
+    if (c.role !== before) sendState(c); // signed in or out: a different view of the state
   };
   const refreshAccess = () => {
     let owners = 0;
@@ -99,9 +127,32 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   };
   refreshAccess();
 
-  const broadcast = (msg: ServerToClient) => {
-    const data = JSON.stringify(msg);
-    for (const c of clients) c.send(data);
+  /**
+   * State changes: owners get the patch as is. Viewers get their own view of the changed keys, and
+   * only keys whose viewer view really changed (e.g. a MIDI setting or an error isn't sent at all).
+   */
+  const viewerSent = new Map<string, string>();
+  const sendPatch = (partial: Partial<AppState>) => {
+    const owners = [...clients].filter((c) => c.role === 'owner');
+    const viewers = [...clients].filter((c) => c.role !== 'owner');
+    if (owners.length) {
+      const data = JSON.stringify({ type: 'patch', state: partial } satisfies ServerToClient);
+      for (const c of owners) c.send(data);
+    }
+    const keys = new Set(Object.keys(partial) as (keyof AppState)[]);
+    if (keys.has('settings')) for (const k of VIEWER_DEPENDS_ON_SETTINGS) keys.add(k);
+    const view = stateForRole(app.state, 'viewer');
+    const changed: Partial<Record<keyof AppState, unknown>> = {};
+    for (const k of keys) {
+      const json = JSON.stringify(view[k]);
+      if (viewerSent.get(k) === json) continue;
+      viewerSent.set(k, json);
+      changed[k] = view[k];
+    }
+    if (viewers.length && Object.keys(changed).length) {
+      const data = JSON.stringify({ type: 'patch', state: changed as Partial<AppState> } satisfies ServerToClient);
+      for (const c of viewers) c.send(data);
+    }
   };
 
   // OSC subscribers get playhead-driven values (progress, remaining) at most ~15 times a second.
@@ -125,17 +176,43 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       setImmediate(() => {
         const state = pending!;
         pending = null;
-        broadcast({ type: 'patch', state });
+        sendPatch(state as Partial<AppState>);
         publishOsc(true);
       });
     }
     Object.assign(pending, partial);
   });
+  // Playhead frames: thinned to ~10 a second during steady playback (devices fill in the motion);
+  // jumps, starts and stops go out at once. Less traffic on a busy Wi-Fi.
+  const frames = new FrameThrottle(100);
   app.on('time', (time, playing) => {
+    publishOsc(false);
+    if (!frames.shouldSend(time, playing, app.state.live.tempo)) return;
     const data = JSON.stringify({ type: 'time', time, playing } satisfies ServerToClient);
     for (const c of clients) c.sendDroppable(data);
-    publishOsc(false);
   });
+
+  // Delay check every 2 s: each device learns its own delay (it shows the playhead that far ahead),
+  // owners see every device's health in Settings → Network.
+  const deviceInfo = (c: Client): DeviceInfo => ({
+    id: c.deviceId ?? '',
+    label: c.local ? `${c.label} (this computer)` : c.label,
+    address: c.address.replace(/^::ffff:/, ''),
+    role: c.role,
+    local: c.local,
+    rtt: c.rtt.current(),
+    worstRtt: c.rtt.worst(),
+    connects: c.deviceId ? (connects.get(c.deviceId) ?? 1) : 1,
+    since: c.since,
+  });
+  const pingTimer = setInterval(() => {
+    const ping = JSON.stringify({ type: 'ping', t: Date.now() } satisfies ServerToClient);
+    for (const c of clients) c.send(ping);
+    const owners = [...clients].filter((c) => c.role === 'owner');
+    if (!owners.length) return;
+    const data = JSON.stringify({ type: 'devices', devices: [...clients].map(deviceInfo) } satisfies ServerToClient);
+    for (const c of owners) c.send(data);
+  }, 2000);
 
   fastify.register(async (instance) => {
     instance.get('/ws', { websocket: true }, (socket, req) => {
@@ -146,12 +223,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
         local: isLocalAddress(address),
         address,
         role: 'viewer',
+        label: deviceLabel(req.headers['user-agent']),
+        since: Date.now(),
+        rtt: new RttTracker(),
       };
       clients.add(client);
       // The device's role is sent in reply to its 'hello', which carries its saved owner token.
       client.role = roleOf(client);
       refreshAccess();
-      client.send(JSON.stringify({ type: 'state', state: app.state } satisfies ServerToClient));
+      sendState(client);
       client.send(JSON.stringify({ type: 'time', time: app.time, playing: app.playing } satisfies ServerToClient));
       socket.on('message', (raw: Buffer) => {
         try {
@@ -172,9 +252,20 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
         switch (msg.type) {
           case 'hello':
             client.token = typeof msg.token === 'string' ? msg.token : undefined;
+            if (!client.deviceId && typeof msg.device === 'string' && msg.device.length <= 64) {
+              client.deviceId = msg.device;
+              connects.set(msg.device, (connects.get(msg.device) ?? 0) + 1);
+            }
             sendSession(client);
             refreshAccess();
             break;
+          case 'pong': {
+            const rtt = Date.now() - Number(msg.t);
+            client.rtt.add(rtt);
+            const current = client.rtt.current();
+            if (current !== null) client.send(JSON.stringify({ type: 'latency', rtt: current } satisfies ServerToClient));
+            break;
+          }
           case 'action':
             if (typeof msg.action !== 'string') return;
             // Enforced here, not just hidden in the UI.
@@ -222,7 +313,11 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     });
   });
 
-  fastify.get('/api/state', async () => app.snapshot());
+  // The full state only for the host computer; anyone else gets what a viewer sees.
+  fastify.get('/api/state', async (req) => {
+    const snap = app.snapshot();
+    return isLocalAddress(req.socket.remoteAddress ?? '') ? snap : { ...snap, ...stateForRole(app.state, 'viewer') };
+  });
   fastify.get('/api/setlist.json', async (_req, reply) => {
     reply.header('Content-Disposition', `attachment; filename="${app.state.setlist.name}.json"`);
     return app.state.setlist;
@@ -316,6 +411,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     port,
     urls,
     async close() {
+      clearInterval(pingTimer);
       app.flush();
       midi.stop();
       oscService.stop();

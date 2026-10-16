@@ -518,18 +518,29 @@ export function Lyrics() {
     barsStart: activeBars ? itemTime(activeBars) : undefined,
     section: nowSection,
     pinned: pinned !== null,
+    songStart: song?.start,
   });
-  const leadKey = lead === 'bars' ? `b:${nowBarKey}` : lead === 'header' ? `h:${nowSection!.id}` : `l:${active}`;
+  const leadKey =
+    lead === 'bars' ? `b:${nowBarKey}` : lead === 'header' ? `h:${nowSection!.id}` : lead === 'songStart' ? `s:${song?.id}` : `l:${active}`;
 
   // The first scroll after opening the page is instant: a smooth one can be lost while the page lays out.
   const scrolled = useRef(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const lineBlock: ScrollLogicalPosition = track?.options.top !== null && track?.options.top !== undefined ? 'start' : 'center';
-  const target = useRef({ lead, lineBlock });
-  target.current = { lead, lineBlock };
+  const target = useRef({ lead, lineBlock, songId: song?.id });
+  target.current = { lead, lineBlock, songId: song?.id };
   const scrollToLead = (behavior: ScrollBehavior) => {
-    const { lead: kind, lineBlock: block } = target.current;
+    const { lead: kind, lineBlock: block, songId } = target.current;
+    const scroller = scrollerRef.current;
+    if (kind === 'songStart') {
+      // The song's title when all songs are listed, otherwise simply the top of the page.
+      const title = songId ? scroller?.querySelector<HTMLElement>(`[data-song-title="${CSS.escape(songId)}"]`) : null;
+      if (title) title.scrollIntoView({ behavior, block: 'start' });
+      else scroller?.scrollTo({ top: 0, behavior });
+      if (scroller) scrolled.current = true;
+      return;
+    }
     const el =
       kind === 'line' ? activeRef.current : scrollerRef.current?.querySelector<HTMLElement>(kind === 'bars' ? '[data-now-bar]' : '[data-now-section]');
     el?.scrollIntoView({ behavior, block: kind === 'line' ? block : 'center' });
@@ -554,7 +565,7 @@ export function Lyrics() {
       const clamp = (i: number) => Math.max(0, Math.min(lines.length - 1, i));
       if (e.key === '.') setPinned(clamp((pinned ?? playingIdx) + 1));
       else if (e.key === ',') setPinned(clamp((pinned ?? playingIdx) - 1));
-      else if (e.key.toLowerCase() === 'b' && !e.shiftKey) setPinned(null);
+      else if (e.key === 'Escape') setPinned(null);
       else if (e.key === 'M' && e.shiftKey) setPinned(pinned === null ? Math.max(0, playingIdx) : null);
       else if ((e.key === 'm' || e.key === 'n') && canJump) {
         const target = clamp(playingIdx + (e.key === 'm' ? 1 : -1));
@@ -649,7 +660,7 @@ export function Lyrics() {
           {items.map((item) => {
             if (item.kind === 'songTitle') {
               return (
-                <h2 key={`t-${item.song.id}`} className="headline mt-16 mb-4 text-[0.8em]" style={{ textAlign: defaultAlign, color: item.song.color ? colorOf(item.song.color) : undefined }}>
+                <h2 key={`t-${item.song.id}`} data-song-title={item.song.id} className="headline mt-16 mb-4 text-[0.8em]" style={{ textAlign: defaultAlign, color: item.song.color ? colorOf(item.song.color) : undefined }}>
                   {item.song.title}
                   {songNote(item.song) && <span className="text-muted"> · {songNote(item.song)}</span>}
                 </h2>

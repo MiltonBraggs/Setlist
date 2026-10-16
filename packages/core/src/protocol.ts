@@ -1,3 +1,4 @@
+import type { MixGroup } from './notation.ts';
 import type { Role } from './access.ts';
 import type { PlaybackPlan } from './plan.ts';
 import type { Setlist, SetlistSummary } from './setlist.ts';
@@ -107,6 +108,8 @@ export interface AppState {
   /** All setlists of this project. */
   setlists: SetlistSummary[];
   queued: QueuedJump | null;
+  /** Mute state of the backing tracks / reference vocals (null: no track flagged +BACKING / +VOCALS). */
+  mix: Record<MixGroup, boolean | null>;
   /** Set by the Metronome button: the section it returns to (GO, or the button again). */
   metronomeReturn: { songId: string; sectionId?: string; title: string; to: number } | null;
   settings: Settings;
@@ -144,10 +147,36 @@ export type ServerToClient =
   /** Top-level keys that changed. */
   | { type: 'patch'; state: Partial<AppState> }
   | { type: 'time'; time: Beats; playing: boolean }
-  | { type: 'session'; session: Session };
+  | { type: 'session'; session: Session }
+  /** Delay check (every 2 s): answer at once with a pong carrying `t`. */
+  | { type: 'ping'; t: number }
+  /** This device's round-trip time to the server, in ms: it shows the playhead half of it ahead. */
+  | { type: 'latency'; rtt: number }
+  /** Owners only: every connected device and its network health (Settings → Network). */
+  | { type: 'devices'; devices: DeviceInfo[] };
+
+export interface DeviceInfo {
+  /** Remembered by the device, so reconnects are counted against it. */
+  id: string;
+  /** e.g. "iPhone · Safari" */
+  label: string;
+  address: string;
+  role: Role;
+  /** The computer running the server. */
+  local: boolean;
+  /** Round-trip time in ms (median of recent checks); null while it isn't answering. */
+  rtt: number | null;
+  /** Worst round trip in about the last minute. */
+  worstRtt: number | null;
+  /** Times this device connected since the server started (1 = never dropped). */
+  connects: number;
+  /** When the current connection started (ms since epoch). */
+  since: number;
+}
 
 export type ClientToServer =
-  | { type: 'hello'; token?: string }
+  | { type: 'hello'; token?: string; device?: string }
+  | { type: 'pong'; t: number }
   | { type: 'action'; action: string; args?: unknown[] }
   /** Enter the owner PIN. */
   | { type: 'signIn'; pin: string }

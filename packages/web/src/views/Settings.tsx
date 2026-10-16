@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { chordTracks, lyricsTracks, type JumpMode, type MidiMapping, type Settings as SettingsT, type ViewerPage, type ViewerPermissions } from '@setlist/core';
+import {
+  chordTracks,
+  lyricsTracks,
+  type DeviceInfo,
+  type JumpMode,
+  type MidiMapping,
+  type Settings as SettingsT,
+  type ViewerPage,
+  type ViewerPermissions,
+} from '@setlist/core';
 import { act, actThrottled, useStore } from '../store.ts';
 import { PinDialog } from '../components/Access.tsx';
 import { Button, Group, Row, Segmented, Select, Switch, TextInput } from '../components/ui.tsx';
@@ -26,6 +35,8 @@ export const ACTION_LABELS: Record<string, string> = {
   toggleLoop: 'Loop',
   escapeLoop: 'Escape loop',
   metronome: 'Metronome (emergency click)',
+  toggleBacking: 'Mute / unmute backing tracks',
+  toggleVocals: 'Mute / unmute reference vocals',
   jumpQueued: 'Jump to queued',
   jumpQueuedNow: 'Jump to queued now',
   cancelQueue: 'Cancel queued jump',
@@ -191,6 +202,8 @@ export function SettingsView() {
           </Row>
         </Group>
 
+        <NetworkCheck />
+
         <ViewerAccess />
 
         <Group title="Playback">
@@ -348,5 +361,56 @@ export function SettingsView() {
         )}
       </div>
     </div>
+  );
+}
+
+/** How healthy a round trip is for following along live (ms). */
+function delayTone(rtt: number | null): { dot: string; text: string } {
+  if (rtt === null) return { dot: 'bg-danger', text: 'Not answering' };
+  if (rtt < 100) return { dot: 'bg-ok', text: `${rtt} ms` };
+  if (rtt < 300) return { dot: 'bg-[#ff9f0a]', text: `${rtt} ms` };
+  return { dot: 'bg-danger', text: `${rtt} ms` };
+}
+
+/**
+ * Settings → Network: every connected device with its delay (checked every 2 s), its worst delay in
+ * about the last minute and how often it reconnected. For the soundcheck: spot a struggling device
+ * before the doors open.
+ */
+function NetworkCheck() {
+  const devices = useStore((s) => s.devices);
+  const sorted = [...(devices ?? [])].sort((a, b) => Number(b.local) - Number(a.local) || a.label.localeCompare(b.label));
+  return (
+    <Group
+      title="Network"
+      footer="Delay to each device, checked every 2 seconds: green under 100 ms, orange under 300 ms. Reconnects mean the device lost the Wi-Fi or locked its screen."
+    >
+      {!devices && <Row label="Checking…" />}
+      {sorted.map((d) => (
+        <DeviceRow key={`${d.id}-${d.since}`} device={d} />
+      ))}
+    </Group>
+  );
+}
+
+function DeviceRow({ device: d }: { device: DeviceInfo }) {
+  const now = delayTone(d.rtt);
+  const reconnects = Math.max(0, d.connects - 1);
+  const minutes = Math.max(0, Math.round((Date.now() - d.since) / 60000));
+  return (
+    <Row
+      label={d.label}
+      hint={`${d.role === 'owner' ? 'Owner' : 'Viewer'} · ${d.address} · connected ${minutes < 1 ? 'just now' : `${minutes} min`}${
+        reconnects ? ` · reconnected ${reconnects}×` : ''
+      }`}
+    >
+      <span className="flex flex-col items-end gap-0.5 text-[15px] tabular">
+        <span className="inline-flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${now.dot}`} />
+          {now.text}
+        </span>
+        {d.worstRtt !== null && <span className="text-[13px] text-muted">worst {d.worstRtt} ms</span>}
+      </span>
+    </Row>
   );
 }

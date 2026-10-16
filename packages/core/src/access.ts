@@ -61,6 +61,8 @@ export const ACTION_CAPABILITY: Record<string, Capability> = {
   playStop: 'transport',
   go: 'transport',
   toggleRecord: 'transport',
+  toggleBacking: 'transport',
+  toggleVocals: 'transport',
 
   jumpBySongs: 'navigate',
   nextSong: 'navigate',

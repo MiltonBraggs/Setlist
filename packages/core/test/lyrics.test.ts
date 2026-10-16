@@ -85,6 +85,17 @@ describe('lyricsFollow: what the Lyrics page keeps centred', () => {
     expect(lyricsFollow({ time: 44, line: lastVerseLine, barsStart: 40, section: solo })).toBe('bars');
   });
 
+  it('shows the start of a song picked while stopped, before its first section', () => {
+    // Next song at 92, its first section ("> Intro") one bar later at 96.
+    expect(lyricsFollow({ time: 92, songStart: 92 })).toBe('songStart');
+    // Lyrics of every song listed: the previous song's last line is not "current" any more.
+    expect(lyricsFollow({ time: 92, line: { start: 80, end: 84 }, songStart: 92 })).toBe('songStart');
+    // A line already sung in the gap (a pickup) is followed as usual.
+    expect(lyricsFollow({ time: 95, line: { start: 94, end: 98 }, songStart: 92 })).toBe('line');
+    // Parked between songs: stay put.
+    expect(lyricsFollow({ time: 88, line: { start: 80, end: 84 } })).toBe('line');
+  });
+
   it('follows the line when the user pinned one, or when no section headers are shown', () => {
     expect(lyricsFollow({ time: 40, line: lastVerseLine, section: solo, pinned: true })).toBe('line');
     expect(lyricsFollow({ time: 40, line: lastVerseLine })).toBe('line');

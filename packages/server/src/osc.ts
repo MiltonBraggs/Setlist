@@ -133,6 +133,8 @@ export class OscService {
       case '/loop/enable': return d('enableLoop');
       case '/loop/escape': return d('escapeLoop');
       case '/setlist/metronome': return d('metronome');
+      case '/setlist/toggleBacking': return d('toggleBacking');
+      case '/setlist/toggleVocals': return d('toggleVocals');
       case '/notify/big': return d('notify', args.length > 1 ? args[1] : args[0], true);
       case '/notify': return d('notify', args.length > 1 ? args[1] : args[0], false);
       case '/device/toggleLock': return d('toggleLock');

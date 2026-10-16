@@ -342,6 +342,55 @@ describe('Metronome button', () => {
   });
 });
 
+describe('Backing / Vocals buttons', () => {
+  const MIX = snapshot(
+    [
+      [0, 'Song'],
+      [32, 'SONG END'],
+    ],
+    [track(0, 'Keys +BACKING'), track(1, 'Pads +BACKING', { mute: true }), track(2, 'Ref Vox +VOCALS'), track(3, 'Click')],
+  );
+  const setTracks = () => bridge.commands.filter((c) => c.name === 'setTrack');
+
+  it('mutes every backing track, then unmutes them all', () => {
+    start(MIX);
+    expect(app.state.mix).toEqual({ backing: false, vocals: false }); // one backing track is still playing
+    bridge.commands = [];
+    app.dispatch('toggleBacking');
+    expect(setTracks()).toEqual([{ name: 'setTrack', id: 't0', mute: true }]); // Pads was already muted
+    expect(app.state.mix.backing).toBe(true);
+    bridge.commands = [];
+    app.dispatch('toggleBacking');
+    expect(setTracks()).toEqual([
+      { name: 'setTrack', id: 't0', mute: false },
+      { name: 'setTrack', id: 't1', mute: false },
+    ]);
+    expect(app.state.mix.backing).toBe(false);
+  });
+
+  it('toggles the reference vocals on their own', () => {
+    start(MIX);
+    bridge.commands = [];
+    app.dispatch('toggleVocals');
+    expect(setTracks()).toEqual([{ name: 'setTrack', id: 't2', mute: true }]);
+    expect(app.state.mix).toEqual({ backing: false, vocals: true });
+  });
+
+  it('follows mutes made in Live itself (mouse, Key Map)', () => {
+    start(MIX);
+    bridge.fromScript({ type: 'mixer', tracks: [['t2', true, false, 0.85]] });
+    expect(app.state.mix.vocals).toBe(true);
+  });
+
+  it('has no buttons without flagged tracks', () => {
+    start(DEMO);
+    expect(app.state.mix).toEqual({ backing: null, vocals: null });
+    bridge.commands = [];
+    app.dispatch('toggleBacking');
+    expect(setTracks()).toEqual([]);
+  });
+});
+
 describe('Remote Script version check', () => {
   it('flags a copy in Live that differs from this checkout, and clears it on disconnect', () => {
     app.expectedScriptBuild = 'abc123';

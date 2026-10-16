@@ -8,4 +8,6 @@ export * from './view.ts';
 export * from './lyrics.ts';
 export * from './chords.ts';
 export * from './access.ts';
+export * from './share.ts';
+export * from './playhead.ts';
 export * from './notes.ts';

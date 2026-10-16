@@ -217,11 +217,18 @@ export function lyricsFollow(o: {
   section?: { start: Beats };
   /** The user pinned a line (keyboard): always follow it. */
   pinned?: boolean;
-}): 'line' | 'bars' | 'header' {
+  /** Start of the song playing (or parked at) now, if any. */
+  songStart?: Beats;
+}): 'line' | 'bars' | 'header' | 'songStart' {
   const { time, line, barsStart, section } = o;
   if (o.pinned) return 'line';
   if (barsStart !== undefined && (!line || barsStart > line.start)) return 'bars';
-  if (!section) return 'line';
+  if (!section) {
+    // Before the song's first section (its lead-in, e.g. after picking the song while stopped):
+    // show the start of this song, not wherever the previous song left the page.
+    if (o.songStart !== undefined && (!line || line.start < o.songStart - EPS)) return 'songStart';
+    return 'line';
+  }
   // A line still inside its clip, or starting in the section (or a pickup just before it), belongs
   // to the section playing now; the previous section's last line doesn't.
   const lineIsCurrent = !!line && (line.end > time + EPS || line.start >= section.start - LYRIC_PICKUP_BEATS - EPS);
